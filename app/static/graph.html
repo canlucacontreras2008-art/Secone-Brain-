@@ -334,8 +334,8 @@
 
   // --- scene constants ---
   const GLOBE_RADIUS = 120;
-  const ORBIT_MIN = 175;
-  const ORBIT_JITTER = 55;
+  const ORBIT_MIN = 145;
+  const ORBIT_JITTER = 25;
   const CAMERA_DISTANCE = 900;
 
   let width = 0, height = 0, dpr = 1;
@@ -386,25 +386,9 @@
     return Math.min(12, base + Math.sqrt(node.degree || 0) * 1.5);
   }
 
-  // Regular latitude/longitude grid of directions on the unit sphere -
-  // excludes the poles themselves (a full row would collapse to one point).
-  function sphereGrid(rows, cols) {
-    const slots = [];
-    for (let i = 0; i < rows; i++) {
-      const theta = ((i + 1) / (rows + 1)) * Math.PI;
-      for (let j = 0; j < cols; j++) {
-        const phi = (j / cols) * Math.PI * 2;
-        slots.push({
-          x: Math.sin(theta) * Math.cos(phi),
-          y: Math.cos(theta),
-          z: Math.sin(theta) * Math.sin(phi),
-        });
-      }
-    }
-    return slots;
-  }
-
-  // --- lay memories out in a grid around the globe: same branch -> adjacent cells ---
+  // --- lay memories out on a grid around the globe, each with its own slow
+  // orbit - same branch -> adjacent cells, packed tighter than one grid
+  // point per memory so they read as a dense, coherent shell.
   function assignPositions(allNodes) {
     const byBranch = new Map();
     const loose = [];
@@ -421,18 +405,34 @@
     ordered.push(...loose);
 
     const count = Math.max(1, ordered.length);
-    const cols = Math.max(6, Math.ceil(Math.sqrt(count * 2)));
+    // A smaller multiplier than "one cell per node" packs memories closer
+    // together on the sphere surface (cells get reused, several memories
+    // per latitude/longitude neighborhood) instead of spreading them out
+    // to fill the whole globe evenly.
+    const cols = Math.max(5, Math.ceil(Math.sqrt(count * 1.1)));
     const rows = Math.max(3, Math.ceil(count / cols));
-    const slots = sphereGrid(rows, cols);
 
     ordered.forEach((node, i) => {
-      const dir = slots[i % slots.length];
+      const row = Math.floor(i / cols) % rows;
+      const col = i % cols;
       const rng = mulberry32(hashStr(node.id));
-      const orbit = ORBIT_MIN + rng() * ORBIT_JITTER;
-      node.x3 = dir.x * orbit;
-      node.y3 = dir.y * orbit;
-      node.z3 = dir.z * orbit;
+      node.orbitTheta = ((row + 1) / (rows + 1)) * Math.PI;
+      node.orbitPhi0 = (col / cols) * Math.PI * 2;
+      node.orbitRadius = ORBIT_MIN + rng() * ORBIT_JITTER;
+      // Each memory drifts around the globe's own axis at its own slow,
+      // independently-seeded rate - a living shell, not a rigid block that
+      // only moves when the whole scene is dragged/auto-rotated.
+      node.orbitSpeed = (rng() - 0.5) * 0.05;
     });
+  }
+
+  function updateOrbits(tSeconds) {
+    for (const n of nodes) {
+      const phi = n.orbitPhi0 + tSeconds * n.orbitSpeed;
+      n.x3 = n.orbitRadius * Math.sin(n.orbitTheta) * Math.cos(phi);
+      n.y3 = n.orbitRadius * Math.cos(n.orbitTheta);
+      n.z3 = n.orbitRadius * Math.sin(n.orbitTheta) * Math.sin(phi);
+    }
   }
 
   // --- 3D math: rotate around Y (yaw) then X (pitch), then perspective-project ---
@@ -752,8 +752,10 @@
     lastProjected = projectedNodes;
   }
 
+  const startTime = performance.now();
   function loop() {
     if (autoRotate) rotation.yaw += 0.0016;
+    updateOrbits((performance.now() - startTime) / 1000);
     render();
     requestAnimationFrame(loop);
   }
