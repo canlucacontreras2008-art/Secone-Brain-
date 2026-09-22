@@ -463,71 +463,194 @@
     return projectRotated(rotatePoint(p3));
   }
 
-  // --- globe rendering ---
+  // --- small 3D vector helpers, for tracing arcs across the sphere surface ---
+  function vNormalize(v) {
+    const len = Math.hypot(v.x, v.y, v.z) || 1;
+    return { x: v.x / len, y: v.y / len, z: v.z / len };
+  }
+  function vCross(a, b) {
+    return { x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x };
+  }
+  function vDot(a, b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+  function vRotateAroundAxis(v, axis, angle) {
+    // Rodrigues' rotation formula
+    const c = Math.cos(angle), s = Math.sin(angle);
+    const cr = vCross(axis, v);
+    const d = vDot(axis, v);
+    return {
+      x: v.x * c + cr.x * s + axis.x * d * (1 - c),
+      y: v.y * c + cr.y * s + axis.y * d * (1 - c),
+      z: v.z * c + cr.z * s + axis.z * d * (1 - c),
+    };
+  }
+  function randomUnitVector(rng) {
+    const z = 1 - 2 * rng();
+    const r = Math.sqrt(Math.max(0, 1 - z * z));
+    const phi = rng() * Math.PI * 2;
+    return { x: r * Math.cos(phi), y: r * Math.sin(phi), z };
+  }
+  function randomTangent(rng, p) {
+    const v = randomUnitVector(rng);
+    const d = vDot(v, p);
+    return vNormalize({ x: v.x - d * p.x, y: v.y - d * p.y, z: v.z - d * p.z });
+  }
+
+  // --- globe rendering: a dense golden holographic core, not a flat map ---
   function drawGlobe() {
     const r = GLOBE_RADIUS * zoom;
     const cx = width / 2, cy = height / 2;
 
     ctx.save();
-    ctx.shadowColor = "rgba(59, 130, 246, 0.55)";
-    ctx.shadowBlur = 46;
+    ctx.shadowColor = "rgba(255, 178, 60, 0.7)";
+    ctx.shadowBlur = 70;
     ctx.beginPath();
-    ctx.arc(cx, cy, r * 0.92, 0, Math.PI * 2);
-    ctx.fillStyle = "#1c4f8f";
+    ctx.arc(cx, cy, r * 0.88, 0, Math.PI * 2);
+    ctx.fillStyle = "#8a4c0f";
     ctx.fill();
     ctx.restore();
 
     const grad = ctx.createRadialGradient(
-      cx - r * 0.35, cy - r * 0.35, r * 0.08,
+      cx - r * 0.3, cy - r * 0.3, r * 0.04,
       cx, cy, r
     );
-    grad.addColorStop(0, "#7cb8ee");
-    grad.addColorStop(0.45, "#2f74c4");
-    grad.addColorStop(1, "#0a2c50");
+    grad.addColorStop(0, "rgba(255, 246, 220, 0.92)");
+    grad.addColorStop(0.35, "rgba(250, 182, 76, 0.55)");
+    grad.addColorStop(0.7, "rgba(197, 105, 22, 0.32)");
+    grad.addColorStop(1, "rgba(60, 30, 8, 0.14)");
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.fillStyle = grad;
     ctx.fill();
 
-    drawGraticule(r / GLOBE_RADIUS);
+    drawFrameRings();
+    drawGraticule();
+    drawCircuitTraces();
+    drawSparklePoints();
   }
 
-  function drawGraticule(scale) {
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.16)";
-    ctx.lineWidth = 1;
-    const steps = 48;
+  function sphereProject(p3) {
+    const rp = rotatePoint(p3);
+    const pr = projectRotated(rp);
+    return { visible: rp.z <= 0, x: pr.x, y: pr.y };
+  }
 
-    const longitudes = [0, Math.PI / 3, (2 * Math.PI) / 3];
-    for (const phi0 of longitudes) {
+  function drawGraticule() {
+    const steps = 56;
+    const longitudeCount = 11;
+    const latitudeCount = 7;
+
+    ctx.lineWidth = 1;
+    for (let i = 0; i < longitudeCount; i++) {
+      const phi0 = (i / longitudeCount) * Math.PI;
       const path = [];
-      for (let i = 0; i <= steps; i++) {
-        const theta = (i / steps) * Math.PI * 2;
-        const p3 = {
+      for (let s = 0; s <= steps; s++) {
+        const theta = (s / steps) * Math.PI * 2;
+        path.push(sphereProject({
           x: GLOBE_RADIUS * Math.sin(theta) * Math.cos(phi0),
           y: GLOBE_RADIUS * Math.cos(theta),
           z: GLOBE_RADIUS * Math.sin(theta) * Math.sin(phi0),
-        };
-        const rp = rotatePoint(p3);
-        const pr = projectRotated(rp);
-        path.push({ visible: rp.z <= 0, x: pr.x, y: pr.y });
+        }));
       }
+      ctx.strokeStyle = "rgba(255, 200, 120, 0.22)";
       strokePath(path);
     }
 
-    const latitudes = [Math.PI / 4, Math.PI / 2, (3 * Math.PI) / 4];
-    for (const theta0 of latitudes) {
+    for (let i = 1; i <= latitudeCount; i++) {
+      const theta0 = (i / (latitudeCount + 1)) * Math.PI;
       const path = [];
-      for (let i = 0; i <= steps; i++) {
-        const phi = (i / steps) * Math.PI * 2;
-        const p3 = {
+      for (let s = 0; s <= steps; s++) {
+        const phi = (s / steps) * Math.PI * 2;
+        path.push(sphereProject({
           x: GLOBE_RADIUS * Math.sin(theta0) * Math.cos(phi),
           y: GLOBE_RADIUS * Math.cos(theta0),
           z: GLOBE_RADIUS * Math.sin(theta0) * Math.sin(phi),
-        };
-        const rp = rotatePoint(p3);
-        const pr = projectRotated(rp);
-        path.push({ visible: rp.z <= 0, x: pr.x, y: pr.y });
+        }));
       }
+      ctx.strokeStyle = "rgba(255, 200, 120, 0.16)";
+      strokePath(path);
+    }
+  }
+
+  // Short glowing arcs scattered over the surface, like circuit traces -
+  // fixed seed so the texture is stable across reloads, not regenerated
+  // (and re-randomized) on every render.
+  const circuitRng = mulberry32(913_311);
+  const CIRCUIT_TRACES = Array.from({ length: 70 }, () => {
+    const p0 = randomUnitVector(circuitRng);
+    const tangent = randomTangent(circuitRng, p0);
+    const axis = vNormalize(vCross(p0, tangent));
+    const arcLen = 0.14 + circuitRng() * 0.34;
+    const width = 0.8 + circuitRng() * 1.4;
+    const brightness = 0.22 + circuitRng() * 0.5;
+    const g = 170 + Math.floor(circuitRng() * 60);
+    const b = 50 + Math.floor(circuitRng() * 70);
+    return { p0, axis, arcLen, width, color: `rgba(255, ${g}, ${b}, ${brightness})` };
+  });
+
+  function drawCircuitTraces() {
+    const steps = 8;
+    for (const trace of CIRCUIT_TRACES) {
+      const path = [];
+      for (let s = 0; s <= steps; s++) {
+        const angle = (s / steps) * trace.arcLen;
+        const p = vRotateAroundAxis(trace.p0, trace.axis, angle);
+        path.push(sphereProject({ x: p.x * GLOBE_RADIUS, y: p.y * GLOBE_RADIUS, z: p.z * GLOBE_RADIUS }));
+      }
+      ctx.strokeStyle = trace.color;
+      ctx.lineWidth = trace.width;
+      strokePath(path);
+    }
+  }
+
+  // A handful of bright points that twinkle - fixed positions (seeded),
+  // animated brightness only, tied to wall-clock time.
+  const sparkleRng = mulberry32(42_042);
+  const SPARKLE_POINTS = Array.from({ length: 36 }, () => ({
+    p: randomUnitVector(sparkleRng),
+    phase: sparkleRng() * Math.PI * 2,
+  }));
+
+  function drawSparklePoints() {
+    const t = performance.now() * 0.0015;
+    for (const sp of SPARKLE_POINTS) {
+      const p3 = { x: sp.p.x * GLOBE_RADIUS, y: sp.p.y * GLOBE_RADIUS, z: sp.p.z * GLOBE_RADIUS };
+      const rp = rotatePoint(p3);
+      if (rp.z > 0) continue;
+      const pr = projectRotated(rp);
+      const twinkle = 0.35 + 0.55 * Math.abs(Math.sin(t + sp.phase));
+      ctx.beginPath();
+      ctx.arc(pr.x, pr.y, Math.max(1, 1.6 * pr.scale), 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 235, 195, ${twinkle})`;
+      ctx.fill();
+    }
+  }
+
+  // A couple of large tilted rings around the globe - decorative structure,
+  // evoking an armillary-sphere / hologram-rig frame rather than a plain ball.
+  const FRAME_RINGS = [
+    { tiltX: 1.0, tiltY: 0.35, radiusMul: 1.28 },
+    { tiltX: -0.55, tiltY: 1.15, radiusMul: 1.2 },
+  ];
+
+  function drawFrameRings() {
+    const steps = 72;
+    for (const ring of FRAME_RINGS) {
+      const R = GLOBE_RADIUS * ring.radiusMul;
+      const path = [];
+      for (let s = 0; s <= steps; s++) {
+        const t = (s / steps) * Math.PI * 2;
+        let p3 = { x: R * Math.cos(t), y: 0, z: R * Math.sin(t) };
+        // fixed tilt defines the ring's own plane, then the live scene
+        // rotation (in rotatePoint, via sphereProject) spins it with the globe
+        const cy = Math.cos(ring.tiltY), sy = Math.sin(ring.tiltY);
+        p3 = { x: p3.x * cy + p3.z * sy, y: p3.y, z: -p3.x * sy + p3.z * cy };
+        const cx2 = Math.cos(ring.tiltX), sx2 = Math.sin(ring.tiltX);
+        p3 = { x: p3.x, y: p3.y * cx2 - p3.z * sx2, z: p3.y * sx2 + p3.z * cx2 };
+        const pr = projectRotated(rotatePoint(p3));
+        path.push({ visible: true, x: pr.x, y: pr.y });
+      }
+      ctx.strokeStyle = "rgba(255, 205, 130, 0.3)";
+      ctx.lineWidth = 1.2;
       strokePath(path);
     }
   }
