@@ -92,4 +92,42 @@ def build_graph() -> Dict[str, List[dict]]:
         nodes[edge["source"]]["degree"] += 1
         nodes[edge["target"]]["degree"] += 1
 
+    _assign_branches(nodes, edges)
+
     return {"nodes": list(nodes.values()), "edges": edges}
+
+
+def _assign_branches(nodes: Dict[str, dict], edges: List[dict]) -> None:
+    """Group nodes into "branches" (connected components) so the UI can color
+    same-branch facts alike - this reflects the graph's actual topology
+    (shared tags, task->lesson links), not just a shared label.
+
+    A node with no edges at all gets branch=None: it isn't part of any
+    visible cluster, so it shouldn't claim a branch color.
+    """
+    parent = {node_id: node_id for node_id in nodes}
+
+    def find(x: str) -> str:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for edge in edges:
+        ra, rb = find(edge["source"]), find(edge["target"])
+        if ra != rb:
+            parent[ra] = rb
+
+    members: Dict[str, List[str]] = {}
+    for node_id in nodes:
+        members.setdefault(find(node_id), []).append(node_id)
+
+    branch_index_by_root: Dict[str, int] = {}
+    for node_id in nodes:  # dict preserves insertion order - stable branch numbering
+        root = find(node_id)
+        if len(members[root]) < 2:
+            nodes[node_id]["branch"] = None
+            continue
+        if root not in branch_index_by_root:
+            branch_index_by_root[root] = len(branch_index_by_root)
+        nodes[node_id]["branch"] = branch_index_by_root[root]

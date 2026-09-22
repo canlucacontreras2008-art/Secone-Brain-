@@ -154,7 +154,6 @@
     transition: opacity 100ms ease;
   }
 
-  .node.label-visible text,
   .node:hover text,
   .node.selected text,
   .node.match text {
@@ -349,7 +348,20 @@
   const SVG_NS = "http://www.w3.org/2000/svg";
 
   const COLORS = { fact: "#8a8a86", lesson: "#5fa83d", task: "#3987e5" };
+  // Cycled per connected component ("branch") to color same-branch facts
+  // alike - a validated categorical set, distinct from the lesson/task hues
+  // above so kind and branch never look like the same signal.
+  const BRANCH_COLORS = ["#d95926", "#199e70", "#c98500", "#d55181", "#9085e9", "#e66767"];
   const hiddenKinds = new Set();
+
+  function colorFor(node) {
+    // Only facts get branch coloring - lessons/tasks keep their fixed kind
+    // color so that encoding stays legible regardless of which branch they're in.
+    if (node.kind === "fact" && node.branch != null) {
+      return BRANCH_COLORS[node.branch % BRANCH_COLORS.length];
+    }
+    return COLORS[node.kind] || COLORS.fact;
+  }
 
   let width = 0, height = 0;
   let transform = { x: 0, y: 0, k: 1 };
@@ -675,17 +687,14 @@
       e.el = line;
     }
 
-    const degrees = nodes.map((n) => n.degree || 0).sort((a, b) => b - a);
-    const labelThreshold = degrees.length > 40 ? degrees[Math.floor(degrees.length * 0.25)] : 0;
-
     nodesLayer.innerHTML = "";
     for (const n of nodes) {
       const g = document.createElementNS(SVG_NS, "g");
-      g.setAttribute("class", "node" + ((n.degree || 0) >= labelThreshold ? " label-visible" : ""));
+      g.setAttribute("class", "node");
 
       const circle = document.createElementNS(SVG_NS, "circle");
       circle.setAttribute("r", radiusFor(n));
-      circle.setAttribute("fill", COLORS[n.kind] || COLORS.fact);
+      circle.setAttribute("fill", colorFor(n));
       g.appendChild(circle);
 
       const label = document.createElementNS(SVG_NS, "text");

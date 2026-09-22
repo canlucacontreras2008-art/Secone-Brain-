@@ -53,6 +53,23 @@ def test_large_shared_tag_cluster_uses_a_ring_not_a_clique():
     assert all(d == 2 for d in degrees.values())  # every node in a ring has degree 2
 
 
+def test_connected_memories_share_a_branch_and_isolated_ones_dont():
+    memory.add_memory("fact", "Python is dynamically typed.", tags=["python", "languages"])
+    memory.add_memory("fact", "Rust has no garbage collector.", tags=["rust", "languages"])
+    memory.add_memory("fact", "The sky is blue.", tags=["sky"])  # no shared tag with anything
+
+    result = graph.build_graph()
+    by_content = {n["detail"]: n for n in result["nodes"]}
+
+    python_branch = by_content["Python is dynamically typed."]["branch"]
+    rust_branch = by_content["Rust has no garbage collector."]["branch"]
+    sky_branch = by_content["The sky is blue."]["branch"]
+
+    assert python_branch is not None
+    assert python_branch == rust_branch  # connected via the "languages" tag
+    assert sky_branch is None  # isolated - no edges, so no branch
+
+
 def test_task_links_to_its_lesson():
     task_id = tasks.log_task("Do the thing", "Did the thing")
     memory.add_memory("lesson", "Always check the thing first.", tags=[], source="task", task_id=task_id)
