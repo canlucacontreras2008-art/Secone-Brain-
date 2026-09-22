@@ -42,6 +42,10 @@ class LearnRequest(BaseModel):
     topic: str
 
 
+class WikipediaScanRequest(BaseModel):
+    topics: List[str]
+
+
 class MemoryIn(BaseModel):
     kind: str
     content: str
@@ -66,6 +70,11 @@ def run_task(req: TaskRequest):
 @app.post("/learn")
 def learn(req: LearnRequest):
     return brain.learn(req.topic)
+
+
+@app.post("/wikipedia/scan")
+def scan_wikipedia(req: WikipediaScanRequest):
+    return brain.scan_wikipedia(req.topics)
 
 
 @app.get("/memory")

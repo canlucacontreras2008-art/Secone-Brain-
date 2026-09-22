@@ -1,0 +1,109 @@
+import os
+import tempfile
+from dataclasses import dataclass, field
+from typing import Any, Dict
+
+import pytest
+
+from app import config, db, memory, tools
+from app.brain import Brain
+
+
+@pytest.fixture(autouse=True)
+def temp_db(monkeypatch):
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    monkeypatch.setattr(config, "DB_PATH", path)
+    db.init_db()
+    yield
+    os.remove(path)
+
+
+@dataclass
+class FakeTextBlock:
+    text: str
+    type: str = "text"
+
+
+@dataclass
+class FakeToolUseBlock:
+    id: str
+    name: str
+    input: Dict[str, Any]
+    type: str = "tool_use"
+
+
+def make_response(content, stop_reason="end_turn"):
+    return type("Resp", (), {"content": content, "stop_reason": stop_reason})()
+
+
+class SequencedFakeMessages:
+    def __init__(self, responses):
+        self._responses = list(responses)
+        self.calls = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        return self._responses.pop(0)
+
+
+class SequencedFakeClient:
+    def __init__(self, responses):
+        self.messages = SequencedFakeMessages(responses)
+
+
+def make_brain(responses) -> Brain:
+    brain = Brain.__new__(Brain)  # skip __init__ - avoid a real anthropic.Anthropic()
+    brain.client = SequencedFakeClient(responses)
+    return brain
+
+
+def test_scan_wikipedia_stores_facts_and_uses_scoped_tools():
+    responses = [
+        make_response(
+            [
+                FakeToolUseBlock(
+                    id="t1",
+                    name="remember",
+                    input={
+                        "kind": "fact",
+                        "content": "Water boils at 100C at sea level.",
+                        "tags": ["water", "physics", "wikipedia"],
+                    },
+                )
+            ],
+            stop_reason="tool_use",
+        ),
+        make_response([FakeTextBlock("Summary of the Water article.")]),
+    ]
+    brain = make_brain(responses)
+
+    result = brain.scan_wikipedia(["Water"])
+
+    assert result["scanned"] == [{"topic": "Water", "summary": "Summary of the Water article."}]
+
+    stored = memory.list_memories(kind="fact")
+    assert len(stored) == 1
+    assert stored[0]["content"] == "Water boils at 100C at sea level."
+    assert set(stored[0]["tags"].split(",")) == {"water", "physics", "wikipedia"}
+
+    first_call_tools = brain.client.messages.calls[0]["tools"]
+    assert first_call_tools == tools.WIKIPEDIA_TOOLS
+    tool_names = {t["name"] for t in first_call_tools}
+    assert tool_names == {"web_search", "web_fetch", "remember"}
+
+
+def test_scan_wikipedia_visits_each_topic_in_order():
+    responses = [
+        make_response([FakeTextBlock("Summary A")]),
+        make_response([FakeTextBlock("Summary B")]),
+    ]
+    brain = make_brain(responses)
+
+    result = brain.scan_wikipedia(["Topic A", "Topic B"])
+
+    assert result["scanned"] == [
+        {"topic": "Topic A", "summary": "Summary A"},
+        {"topic": "Topic B", "summary": "Summary B"},
+    ]
+    assert len(brain.client.messages.calls) == 2

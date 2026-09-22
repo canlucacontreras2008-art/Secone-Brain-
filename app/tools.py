@@ -1,10 +1,26 @@
 from . import memory
 
-# Server tool - runs on Anthropic's infrastructure, no local execution needed.
+# Server tools - run on Anthropic's infrastructure, no local execution needed.
 WEB_SEARCH_TOOL = {
     "type": "web_search_20260209",
     "name": "web_search",
     "max_uses": 5,
+}
+
+# Wikipedia-scoped variants for the /wikipedia/scan endpoint: allowed_domains
+# means these can't wander off Wikipedia even if the model tries to.
+WIKIPEDIA_SEARCH_TOOL = {
+    "type": "web_search_20260209",
+    "name": "web_search",
+    "max_uses": 3,
+    "allowed_domains": ["en.wikipedia.org", "wikipedia.org"],
+}
+
+WIKIPEDIA_FETCH_TOOL = {
+    "type": "web_fetch_20260209",
+    "name": "web_fetch",
+    "max_uses": 5,
+    "allowed_domains": ["en.wikipedia.org", "wikipedia.org"],
 }
 
 REMEMBER_TOOL = {
@@ -45,6 +61,7 @@ RECALL_TOOL = {
 }
 
 ALL_TOOLS = [WEB_SEARCH_TOOL, REMEMBER_TOOL, RECALL_TOOL]
+WIKIPEDIA_TOOLS = [WIKIPEDIA_SEARCH_TOOL, WIKIPEDIA_FETCH_TOOL, REMEMBER_TOOL]
 
 
 def execute_tool(name: str, tool_input: dict) -> str:

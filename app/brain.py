@@ -1,4 +1,5 @@
 import json
+from typing import List, Optional
 
 import anthropic
 
@@ -30,15 +31,21 @@ class Brain:
         lines = [f"- ({h['kind']}) {h['content']}" for h in hits]
         return "Relevant things you already know:\n" + "\n".join(lines)
 
-    def _run_loop(self, messages: list, extra_system: str = "") -> str:
+    def _run_loop(
+        self,
+        messages: list,
+        extra_system: str = "",
+        tool_list: Optional[list] = None,
+    ) -> str:
         system = SYSTEM_PROMPT + (f"\n\n{extra_system}" if extra_system else "")
+        active_tools = tools.ALL_TOOLS if tool_list is None else tool_list
 
         for _ in range(config.MAX_TOOL_ITERATIONS):
             response = self.client.messages.create(
                 model=config.MODEL,
                 max_tokens=4096,
                 system=system,
-                tools=tools.ALL_TOOLS,
+                tools=active_tools,
                 messages=messages,
             )
 
@@ -159,3 +166,29 @@ class Brain:
         )
         summary = self._run_loop([{"role": "user", "content": prompt}])
         return {"summary": summary, "recent_facts": memory.list_memories(kind="fact", limit=20)}
+
+    def scan_wikipedia(self, topics: List[str]) -> dict:
+        """Learn from Wikipedia specifically: for each topic, search Wikipedia,
+        fetch the most relevant article, and store concrete facts from it.
+
+        Search and fetch are both domain-restricted to wikipedia.org
+        (see tools.WIKIPEDIA_TOOLS) so this can't wander off onto the open web.
+        """
+        scanned = []
+        for topic in topics:
+            prompt = (
+                f'Search Wikipedia for "{topic}", fetch the most relevant '
+                "article, and read it. Call `remember` with kind=fact for "
+                "each concrete, verifiable fact you find - names, dates, "
+                "numbers, definitions, relationships. Aim for 8-15 facts if "
+                "the article supports it. Tag every fact with 2-4 short "
+                f'topical keywords, always including "wikipedia" and "{topic}". '
+                "Then give a one-paragraph summary of the article."
+            )
+            summary = self._run_loop(
+                [{"role": "user", "content": prompt}],
+                tool_list=tools.WIKIPEDIA_TOOLS,
+            )
+            scanned.append({"topic": topic, "summary": summary})
+
+        return {"scanned": scanned, "recent_facts": memory.list_memories(kind="fact", limit=30)}

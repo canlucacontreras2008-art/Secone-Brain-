@@ -21,6 +21,11 @@ stored as long-term memory it recalls on future work).
   pulled back into context automatically. `/learn` runs the same loop
   proactively: point it at a topic and it researches the web and stores what
   it finds as `fact` memories.
+- **`/wikipedia/scan`** - a Wikipedia-focused version of `/learn`: for each
+  topic it searches Wikipedia, fetches the actual article, and extracts
+  concrete facts from it. Both the search and fetch tools are domain-locked
+  to `wikipedia.org` (see `tools.WIKIPEDIA_TOOLS`), so this can't wander off
+  onto the open web even if the model tries to.
 
 Nothing here is a black box: every fact and lesson the brain has stored is
 visible and editable via `GET /memory` and `POST /memory` - or visually, as a
@@ -59,6 +64,7 @@ uvicorn app.main:app --reload
 | POST   | `/chat`      | `{"message": "..."}`           | Chat turn. Can search the web and read/write memory. |
 | POST   | `/task`      | `{"description": "..."}`       | Runs a task end-to-end, then reflects and stores a lesson. Returns `{task_id, result, reflection}`. |
 | POST   | `/learn`     | `{"topic": "..."}`             | Proactively researches a topic on the web and stores facts. |
+| POST   | `/wikipedia/scan` | `{"topics": ["...", "..."]}` | Scans each topic on Wikipedia specifically and stores facts. |
 | GET    | `/memory`    | `?kind=fact\|lesson&limit=100` | Lists stored memories. |
 | POST   | `/memory`    | `{"kind", "content", "tags"}`  | Manually add a memory. |
 | GET    | `/graph`     | -                               | The memory graph UI (open in a browser). |
@@ -71,6 +77,10 @@ uvicorn app.main:app --reload
 curl -X POST localhost:8000/task \
   -H 'content-type: application/json' \
   -d '{"description": "Find the current version of Python and summarize what changed in the latest release."}'
+
+curl -X POST localhost:8000/wikipedia/scan \
+  -H 'content-type: application/json' \
+  -d '{"topics": ["Quantum computing", "Ada Lovelace"]}'
 
 curl localhost:8000/memory?kind=lesson
 ```
