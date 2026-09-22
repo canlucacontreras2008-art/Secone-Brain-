@@ -21,50 +21,54 @@ def test_empty_graph():
     assert result == {"nodes": [], "edges": []}
 
 
-def test_shared_tag_edge_between_memories():
-    memory.add_memory("fact", "Python is dynamically typed.", tags=["python", "languages"])
-    memory.add_memory("fact", "Rust has no garbage collector.", tags=["rust", "languages"])
-    memory.add_memory("fact", "The sky is blue.", tags=["sky"])
+def test_same_topic_creates_an_edge():
+    memory.add_memory("fact", "Python is dynamically typed.", topic="Programming languages", tags=["python"])
+    memory.add_memory("fact", "Rust has no garbage collector.", topic="Programming languages", tags=["rust"])
+    memory.add_memory("fact", "The sky is blue.", topic="Sky")
 
     result = graph.build_graph()
 
     assert len(result["nodes"]) == 3
-    shared_tag_edges = [e for e in result["edges"] if e["kind"] == "shared-tag"]
-    assert len(shared_tag_edges) == 1
-    assert shared_tag_edges[0]["tag"] == "languages"
+    same_topic_edges = [e for e in result["edges"] if e["kind"] == "same-topic"]
+    assert len(same_topic_edges) == 1
+    assert same_topic_edges[0]["topic"] == "Programming languages"
 
     degrees = {n["id"]: n["degree"] for n in result["nodes"]}
     assert sum(degrees.values()) == 2  # one edge touches two nodes
 
 
-def test_large_shared_tag_cluster_uses_a_ring_not_a_clique():
-    # 10 memories all sharing one tag would be 45 edges as a full clique
-    # (unreadable at any layout spacing) - past MAX_CLIQUE_TAG_SIZE, edges
-    # should form a ring instead: exactly one edge per node.
+def test_large_shared_topic_uses_a_ring_not_a_clique():
+    # 10 memories on one topic would be 45 edges as a full clique (unreadable
+    # at any layout spacing) - past MAX_CLIQUE_TOPIC_SIZE, edges should form
+    # a ring instead: exactly one edge per node. Unlike the old tag-based
+    # design, a topic this large is still a real, single cluster - no upper
+    # cutoff excludes it, since topic is an authoritative single field, not
+    # a freeform tag that might just be a generic marker.
     for i in range(10):
-        memory.add_memory("fact", f"Fact #{i} about Ada Lovelace.", tags=["Ada Lovelace"])
+        memory.add_memory("fact", f"Fact #{i} about Ada Lovelace.", topic="Ada Lovelace")
 
     result = graph.build_graph()
 
-    shared_tag_edges = [e for e in result["edges"] if e["kind"] == "shared-tag"]
-    assert len(shared_tag_edges) == 10  # ring: one edge per node, not C(10, 2) = 45
+    same_topic_edges = [e for e in result["edges"] if e["kind"] == "same-topic"]
+    assert len(same_topic_edges) == 10  # ring: one edge per node, not C(10, 2) = 45
 
     degrees = {n["id"]: n["degree"] for n in result["nodes"]}
     assert all(d == 2 for d in degrees.values())  # every node in a ring has degree 2
 
+    branches = {n["branch"] for n in result["nodes"]}
+    assert len(branches) == 1  # still one single cluster, just drawn as a ring
 
-def test_a_generic_tag_shared_across_many_topics_does_not_merge_branches():
+
+def test_shared_tags_do_not_merge_different_topics():
     # This is exactly what a batch of Wikipedia scans produces: every fact
-    # carries the generic "wikipedia" source tag *and* its own specific
-    # topic tag. If "wikipedia" contributed edges, a ring would still fully
-    # connect every fact from every topic into one giant component - the
-    # bug this test guards against ("all topics ended up on one globe").
-    # 11 + 11 = 22 facts share "wikipedia" - over MAX_TAG_FANOUT_FOR_EDGES (20),
-    # while each topic tag alone (11) stays comfortably under it.
+    # carries the generic "wikipedia" tag, but each has its own distinct
+    # topic. Tags are pure search metadata now - only topic drives grouping,
+    # so sharing "wikipedia" must never merge unrelated topics into one
+    # branch (the bug this guards against: "all topics on one globe").
     for i in range(11):
-        memory.add_memory("fact", f"Algorithm fact #{i}.", tags=["wikipedia", "Algorithm"])
+        memory.add_memory("fact", f"Algorithm fact #{i}.", topic="Algorithm", tags=["wikipedia"])
     for i in range(11):
-        memory.add_memory("fact", f"Mechanics fact #{i}.", tags=["wikipedia", "Classical mechanics"])
+        memory.add_memory("fact", f"Mechanics fact #{i}.", topic="Classical mechanics", tags=["wikipedia"])
 
     result = graph.build_graph()
     by_content = {n["detail"]: n for n in result["nodes"]}
@@ -76,32 +80,27 @@ def test_a_generic_tag_shared_across_many_topics_does_not_merge_branches():
     assert len(mechanics_branches) == 1  # all mechanics facts share one branch
     assert algorithm_branches != mechanics_branches  # but the two topics are NOT merged
 
-    # The "wikipedia" tag itself must not appear on any edge - it's excluded
-    # as too generic (shared by more memories than MAX_TAG_FANOUT_FOR_EDGES).
-    tags_used = {e.get("tag") for e in result["edges"] if e["kind"] == "shared-tag"}
-    assert "wikipedia" not in tags_used
+    # No edge should ever be keyed by a tag - "shared-tag" no longer exists.
+    edge_kinds = {e["kind"] for e in result["edges"]}
+    assert edge_kinds == {"same-topic"}
 
 
-def test_connected_memories_share_a_branch_and_isolated_ones_dont():
-    memory.add_memory("fact", "Python is dynamically typed.", tags=["python", "languages"])
-    memory.add_memory("fact", "Rust has no garbage collector.", tags=["rust", "languages"])
-    memory.add_memory("fact", "The sky is blue.", tags=["sky"])  # no shared tag with anything
+def test_memories_without_a_topic_stay_unbranched():
+    memory.add_memory("fact", "Python is dynamically typed.", topic="Programming languages")
+    memory.add_memory("fact", "Rust has no garbage collector.", topic="Programming languages")
+    memory.add_memory("fact", "The sky is blue.")  # no topic at all
 
     result = graph.build_graph()
     by_content = {n["detail"]: n for n in result["nodes"]}
 
-    python_branch = by_content["Python is dynamically typed."]["branch"]
-    rust_branch = by_content["Rust has no garbage collector."]["branch"]
-    sky_branch = by_content["The sky is blue."]["branch"]
-
-    assert python_branch is not None
-    assert python_branch == rust_branch  # connected via the "languages" tag
-    assert sky_branch is None  # isolated - no edges, so no branch
+    assert by_content["Python is dynamically typed."]["branch"] is not None
+    assert by_content["The sky is blue."]["branch"] is None
+    assert by_content["The sky is blue."]["topic"] == ""
 
 
 def test_task_links_to_its_lesson():
     task_id = tasks.log_task("Do the thing", "Did the thing")
-    memory.add_memory("lesson", "Always check the thing first.", tags=[], source="task", task_id=task_id)
+    memory.add_memory("lesson", "Always check the thing first.", source="task", task_id=task_id)
 
     result = graph.build_graph()
 

@@ -946,6 +946,10 @@
         <div class="field-value">${escapeHtml(node.detail)}</div>
       </div>
       <div class="field">
+        <div class="field-label">Topic</div>
+        <div class="field-value">${node.topic ? escapeHtml(node.topic) : "&mdash;"}</div>
+      </div>
+      <div class="field">
         <div class="field-label">Tags</div>
         <div class="field-value">${tagsHtml}</div>
       </div>

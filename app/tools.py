@@ -36,13 +36,27 @@ REMEMBER_TOOL = {
         "properties": {
             "kind": {"type": "string", "enum": ["fact", "lesson"]},
             "content": {"type": "string"},
+            "topic": {
+                "type": "string",
+                "description": (
+                    "The general subject this memory is about, in a short, "
+                    "consistent form (e.g. \"Ada Lovelace\", \"Classical mechanics\"). "
+                    "This is the authoritative grouping key - reuse the exact same "
+                    "string across every memory about the same subject so they "
+                    "cluster together, rather than inventing a slightly different "
+                    "phrasing each time."
+                ),
+            },
             "tags": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "A few short keywords to help you find this again later.",
+                "description": (
+                    "A few extra short keywords for search - not used for grouping, "
+                    "just to help find this again later."
+                ),
             },
         },
-        "required": ["kind", "content", "tags"],
+        "required": ["kind", "content", "topic", "tags"],
         "additionalProperties": False,
     },
 }
@@ -64,13 +78,20 @@ ALL_TOOLS = [WEB_SEARCH_TOOL, REMEMBER_TOOL, RECALL_TOOL]
 WIKIPEDIA_TOOLS = [WIKIPEDIA_SEARCH_TOOL, WIKIPEDIA_FETCH_TOOL, REMEMBER_TOOL]
 
 
-def execute_tool(name: str, tool_input: dict) -> str:
-    """Dispatch a client-side tool call. Server tools (web_search) never reach here."""
+def execute_tool(name: str, tool_input: dict, default_topic: str = "") -> str:
+    """Dispatch a client-side tool call. Server tools (web_search) never reach here.
+
+    default_topic, when set, overrides whatever topic the model chose - used by
+    a Wikipedia scan to force every fact from one article to the exact same
+    topic string, rather than trusting the model to phrase it identically
+    across many separate tool calls in the same conversation.
+    """
     if name == "remember":
         memory.add_memory(
             kind=tool_input["kind"],
             content=tool_input["content"],
             tags=tool_input.get("tags", []),
+            topic=default_topic or tool_input.get("topic", ""),
             source="self",
         )
         return "Saved to memory."

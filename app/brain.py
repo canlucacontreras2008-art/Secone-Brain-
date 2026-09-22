@@ -16,7 +16,11 @@ You have three abilities beyond a normal chat model:
 Use `remember` proactively: when you learn something true about the world via
 web_search, when the user tells you something about themselves or their
 preferences, or when you notice something that would help you do better next
-time. Be specific and atomic - one fact or lesson per call.
+time. Be specific and atomic - one fact or lesson per call. Every memory
+needs a `topic` - the general subject it's about. Reuse the exact same topic
+string across multiple memories about the same subject (don't paraphrase it
+differently each time); topic is what groups related memories together, so
+inconsistent phrasing splits one real subject into several unrelated ones.
 """
 
 
@@ -37,6 +41,7 @@ class Brain:
         extra_system: str = "",
         tool_list: Optional[list] = None,
         max_iterations: Optional[int] = None,
+        default_topic: str = "",
     ) -> str:
         system = SYSTEM_PROMPT + (f"\n\n{extra_system}" if extra_system else "")
         active_tools = tools.ALL_TOOLS if tool_list is None else tool_list
@@ -65,7 +70,7 @@ class Brain:
             tool_results = []
             for block in tool_uses:
                 try:
-                    result = tools.execute_tool(block.name, block.input)
+                    result = tools.execute_tool(block.name, block.input, default_topic=default_topic)
                     tool_results.append(
                         {"type": "tool_result", "tool_use_id": block.id, "content": result}
                     )
@@ -109,9 +114,9 @@ class Brain:
         and store it - linked back to the task - so future tasks of a similar
         shape benefit from it.
 
-        Tags come from the model, not a fixed label - a fixed tag like
+        Topic/tags come from the model, not a fixed label - a fixed tag like
         "task-reflection" on every lesson would make all lessons look
-        connected to each other regardless of topic, once memories are
+        connected to each other regardless of subject, once memories are
         viewed as a graph.
         """
         prompt = (
@@ -132,13 +137,17 @@ class Brain:
                         "type": "object",
                         "properties": {
                             "lesson": {"type": ["string", "null"]},
+                            "topic": {
+                                "type": "string",
+                                "description": "The general subject this lesson is about.",
+                            },
                             "tags": {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "2-4 short topical keywords for this lesson.",
+                                "description": "2-4 short extra keywords for search.",
                             },
                         },
-                        "required": ["lesson", "tags"],
+                        "required": ["lesson", "topic", "tags"],
                         "additionalProperties": False,
                     },
                 },
@@ -153,6 +162,7 @@ class Brain:
                 kind="lesson",
                 content=lesson,
                 tags=data.get("tags") or [],
+                topic=data.get("topic") or "",
                 source="task",
                 task_id=task_id,
             )
@@ -166,7 +176,10 @@ class Brain:
             "you're confident in, call `remember` with kind=fact. Then give a short "
             "summary of what you found."
         )
-        summary = self._run_loop([{"role": "user", "content": prompt}])
+        # Force every fact's topic to the exact string the caller asked for,
+        # rather than trusting the model to phrase it identically on every
+        # `remember` call in this conversation.
+        summary = self._run_loop([{"role": "user", "content": prompt}], default_topic=topic)
         return {"summary": summary, "recent_facts": memory.list_memories(kind="fact", limit=20)}
 
     def _scan_one_wikipedia_topic(self, topic: str) -> str:
@@ -175,9 +188,8 @@ class Brain:
             "article, and read it. Call `remember` with kind=fact for "
             "each concrete, verifiable fact you find - names, dates, "
             "numbers, definitions, relationships. Aim for 8-15 facts if "
-            "the article supports it. Tag every fact with 2-4 short "
-            f'topical keywords, always including "wikipedia" and "{topic}". '
-            "Then give a one-paragraph summary of the article."
+            "the article supports it. Tag every fact with 2-4 short extra "
+            "search keywords."
         )
         return self._run_loop(
             [{"role": "user", "content": prompt}],
@@ -188,6 +200,12 @@ class Brain:
             # give a closing summary, even though the facts up to that
             # point are still saved.
             max_iterations=20,
+            # Force every fact from this article to the exact same topic
+            # string - the caller's, not whatever phrasing the model might
+            # drift into across many separate `remember` calls. This is what
+            # keeps "Ada Lovelace" from splitting into several near-duplicate
+            # topic globes just because the model varied its wording.
+            default_topic=topic,
         )
 
     def scan_wikipedia(self, topics: List[str]) -> dict:

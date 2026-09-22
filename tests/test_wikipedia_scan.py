@@ -68,6 +68,9 @@ def test_scan_wikipedia_stores_facts_and_uses_scoped_tools():
                     input={
                         "kind": "fact",
                         "content": "Water boils at 100C at sea level.",
+                        # Deliberately a *different* phrasing than the scan
+                        # topic - the server-side override must win regardless.
+                        "topic": "Water (chemistry)",
                         "tags": ["water", "physics", "wikipedia"],
                     },
                 )
@@ -85,6 +88,10 @@ def test_scan_wikipedia_stores_facts_and_uses_scoped_tools():
     stored = memory.list_memories(kind="fact")
     assert len(stored) == 1
     assert stored[0]["content"] == "Water boils at 100C at sea level."
+    # Server-side default_topic overrides whatever the model said - this is
+    # what stops "Water" / "Water (chemistry)" / etc. from fragmenting into
+    # separate topic globes for what is really one subject.
+    assert stored[0]["topic"] == "Water"
     assert set(stored[0]["tags"].split(",")) == {"water", "physics", "wikipedia"}
 
     first_call_tools = brain.client.messages.calls[0]["tools"]

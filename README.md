@@ -12,9 +12,14 @@ stored as long-term memory it recalls on future work).
   and `recall`.
 - **`app/memory.py` + `app/db.py`** - long-term memory, backed by SQLite.
   Every memory is a `fact` (something true about the world or the user) or a
-  `lesson` (something learned about how to do a task well). Recall is
-  keyword-overlap search - no external vector DB or API key needed to get
-  started; swap in embeddings later if recall quality becomes the bottleneck.
+  `lesson` (something learned about how to do a task well), plus an
+  authoritative `topic` field - the general subject it's about, set by the
+  model on every `remember` call (see `tools.REMEMBER_TOOL`) and used to
+  group related memories together (see the graph below). `tags` remain a
+  separate, freeform field for search only - they don't affect grouping.
+  Recall is keyword-overlap search - no external vector DB or API key needed
+  to get started; swap in embeddings later if recall quality becomes the
+  bottleneck.
 - **Self-improvement loop** - after every `/task` run, the brain asks itself
   "what's the one lesson worth keeping from that?" and stores the answer as a
   `lesson` memory. The next time it works on a similar task, that lesson gets
@@ -25,7 +30,12 @@ stored as long-term memory it recalls on future work).
   topic it searches Wikipedia, fetches the actual article, and extracts
   concrete facts from it. Both the search and fetch tools are domain-locked
   to `wikipedia.org` (see `tools.WIKIPEDIA_TOOLS`), so this can't wander off
-  onto the open web even if the model tries to.
+  onto the open web even if the model tries to. Every fact from one scan is
+  forced to the exact same `topic` string server-side (`default_topic` in
+  `Brain._run_loop`) rather than trusting the model to phrase it identically
+  across many separate `remember` calls - otherwise "Ada Lovelace" one call
+  and "Ada Lovelace (mathematician)" the next would fragment one real
+  subject into several unrelated topic clusters.
 - **Research queue** (`/queue`) - a persisted, durable to-do list of topics
   to Wikipedia-scan, backed by SQLite (`app/research_queue.py`). Queuing a
   topic and actually running the scan are separate steps/requests - useful
@@ -45,8 +55,9 @@ latitude/longitude lines, scattered short "circuit trace" arcs, twinkling
 points, a couple of tilted frame rings) rather than a plain ball - orbited
 by one small "topic globe" per branch (the connected component a group of
 memories belongs to, computed from real relationships: a task links to the
-lesson it produced, and memories link when they share a tag), each tinted
-in that branch's color. That branch's own memories then orbit *their*
+lesson it produced, and memories link when they share the same `topic` -
+an authoritative field, not a guessed-at tag), each tinted in that branch's
+color. That branch's own memories then orbit *their*
 topic globe rather than the main one - a hierarchy, not a flat shell -
 and every level of it drifts continuously on its own, independent of
 camera control. Lessons are green and tasks are blue at every level;
@@ -90,7 +101,7 @@ uvicorn app.main:app --reload
 | GET    | `/queue`     | `?status=pending\|running\|done\|error` | Lists queue items and their status. |
 | POST   | `/queue/run` | `?limit=N` (optional)          | Works through pending queue items via `/wikipedia/scan`'s logic. Omit `limit` to drain the whole queue. |
 | GET    | `/memory`    | `?kind=fact\|lesson&limit=100` | Lists stored memories. |
-| POST   | `/memory`    | `{"kind", "content", "tags"}`  | Manually add a memory. |
+| POST   | `/memory`    | `{"kind", "content", "topic", "tags"}` | Manually add a memory. `topic` groups it with others on the same subject. |
 | GET    | `/graph`     | -                               | The memory graph UI (open in a browser). |
 | GET    | `/graph/data`| -                               | `{nodes, edges}` JSON backing the graph UI. |
 | GET    | `/health`    | -                               | Liveness check. |
