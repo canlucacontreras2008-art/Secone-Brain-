@@ -1,6 +1,8 @@
+import json
+
 import anthropic
 
-from . import config, memory, tools
+from . import config, memory, tasks, tools
 
 SYSTEM_PROMPT = """You are Secone, a self-improving AI assistant.
 
@@ -88,28 +90,63 @@ class Brain:
         messages = [{"role": "user", "content": task_description}]
         result = self._run_loop(messages, extra_system=extra_system)
 
-        reflection = self._reflect(task_description, result)
-        return {"result": result, "reflection": reflection}
+        task_id = tasks.log_task(task_description, result)
+        reflection = self._reflect(task_description, result, task_id=task_id)
+        tasks.set_reflection(task_id, reflection)
+        return {"task_id": task_id, "result": result, "reflection": reflection}
 
-    def _reflect(self, task_description: str, result: str) -> str:
+    def _reflect(self, task_description: str, result: str, task_id: int) -> str:
         """Self-improvement step: extract a durable lesson from how the task went
-        and store it, so future tasks of a similar shape benefit from it."""
+        and store it - linked back to the task - so future tasks of a similar
+        shape benefit from it.
+
+        Tags come from the model, not a fixed label - a fixed tag like
+        "task-reflection" on every lesson would make all lessons look
+        connected to each other regardless of topic, once memories are
+        viewed as a graph.
+        """
         prompt = (
             f"You just finished this task:\n{task_description}\n\n"
             f"Here is how it went:\n{result}\n\n"
-            "In one or two sentences, what is the single most useful, general "
-            "lesson to remember for next time you face a similar task? "
-            "If there's genuinely nothing worth keeping, reply with exactly: NONE."
+            "What is the single most useful, general lesson to remember for "
+            "next time you face a similar task? If there's genuinely nothing "
+            "worth keeping, set lesson to null."
         )
         response = self.client.messages.create(
             model=config.MODEL,
             max_tokens=300,
-            output_config={"effort": "low"},
+            output_config={
+                "effort": "low",
+                "format": {
+                    "type": "json_schema",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "lesson": {"type": ["string", "null"]},
+                            "tags": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "2-4 short topical keywords for this lesson.",
+                            },
+                        },
+                        "required": ["lesson", "tags"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
             messages=[{"role": "user", "content": prompt}],
         )
-        lesson = next((b.text for b in response.content if b.type == "text"), "").strip()
-        if lesson and lesson.upper() != "NONE":
-            memory.add_memory(kind="lesson", content=lesson, tags=["task-reflection"], source="task")
+        text = next((b.text for b in response.content if b.type == "text"), "{}")
+        data = json.loads(text)
+        lesson = (data.get("lesson") or "").strip()
+        if lesson:
+            memory.add_memory(
+                kind="lesson",
+                content=lesson,
+                tags=data.get("tags") or [],
+                source="task",
+                task_id=task_id,
+            )
         return lesson
 
     def learn(self, topic: str) -> dict:

@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS memories (
     content TEXT NOT NULL,
     tags TEXT NOT NULL DEFAULT '',
     source TEXT NOT NULL,
+    task_id INTEGER REFERENCES task_log(id),
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -37,3 +38,7 @@ def get_conn():
 def init_db() -> None:
     with get_conn() as conn:
         conn.executescript(SCHEMA)
+        # Dev-time migration for DBs created before task_id existed on memories.
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(memories)")}
+        if "task_id" not in columns:
+            conn.execute("ALTER TABLE memories ADD COLUMN task_id INTEGER REFERENCES task_log(id)")

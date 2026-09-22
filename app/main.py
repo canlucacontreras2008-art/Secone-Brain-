@@ -1,11 +1,15 @@
+from pathlib import Path
 from typing import List, Optional
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from . import db
+from . import db, graph
 from . import memory as memory_store
 from .brain import Brain
+
+STATIC_DIR = Path(__file__).parent / "static"
 
 app = FastAPI(title="Secone Brain")
 brain = Brain()
@@ -29,6 +33,7 @@ class TaskRequest(BaseModel):
 
 
 class TaskResponse(BaseModel):
+    task_id: int
     result: str
     reflection: str
 
@@ -72,3 +77,13 @@ def get_memory(kind: Optional[str] = None, limit: int = 100):
 def add_memory(item: MemoryIn):
     memory_id = memory_store.add_memory(item.kind, item.content, item.tags, source="manual")
     return {"id": memory_id}
+
+
+@app.get("/graph")
+def graph_page():
+    return FileResponse(STATIC_DIR / "graph.html")
+
+
+@app.get("/graph/data")
+def graph_data():
+    return graph.build_graph()

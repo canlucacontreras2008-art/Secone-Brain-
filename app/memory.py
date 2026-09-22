@@ -16,12 +16,13 @@ def add_memory(
     content: str,
     tags: Optional[List[str]] = None,
     source: str = "manual",
+    task_id: Optional[int] = None,
 ) -> int:
     tag_str = ",".join(tags or [])
     with db.get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO memories (kind, content, tags, source) VALUES (?, ?, ?, ?)",
-            (kind, content, tag_str, source),
+            "INSERT INTO memories (kind, content, tags, source, task_id) VALUES (?, ?, ?, ?, ?)",
+            (kind, content, tag_str, source, task_id),
         )
         return cur.lastrowid
 

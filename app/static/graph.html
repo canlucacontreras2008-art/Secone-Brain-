@@ -1,0 +1,730 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Secone Brain — Memory Graph</title>
+<style>
+  :root {
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --border: rgba(255, 255, 255, 0.10);
+    --edge: rgba(195, 194, 183, 0.16);
+    --edge-strong: rgba(89, 165, 89, 0.55);
+    --fact: #8a8a86;
+    --lesson: #5fa83d;
+    --task: #3987e5;
+    --accent-ring: #ffffff;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    overflow: hidden;
+  }
+
+  .app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-wrap: wrap;
+  }
+
+  header h1 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0;
+    white-space: nowrap;
+    color: var(--text-primary);
+  }
+
+  header h1 span {
+    color: var(--text-muted);
+    font-weight: 400;
+  }
+
+  #search {
+    flex: 1 1 220px;
+    min-width: 160px;
+    max-width: 360px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-primary);
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+
+  #search::placeholder { color: var(--text-muted); }
+  #search:focus { outline: none; border-color: var(--text-secondary); }
+
+  .legend {
+    display: flex;
+    gap: 6px;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    padding: 5px 10px 5px 8px;
+    cursor: pointer;
+  }
+
+  .legend-item.off { opacity: 0.35; }
+  .legend-item:hover { border-color: var(--text-secondary); }
+
+  .dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    display: inline-block;
+    flex: none;
+  }
+
+  .dot.fact { background: var(--fact); }
+  .dot.lesson { background: var(--lesson); }
+  .dot.task { background: var(--task); }
+
+  #stats {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  main {
+    position: relative;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: grab;
+    background: var(--page);
+  }
+
+  svg.panning { cursor: grabbing; }
+
+  .node circle {
+    stroke: rgba(0, 0, 0, 0.5);
+    stroke-width: 1px;
+    cursor: pointer;
+    transition: opacity 120ms ease;
+  }
+
+  .node.selected circle {
+    stroke: var(--accent-ring);
+    stroke-width: 2px;
+  }
+
+  .node text {
+    fill: var(--text-secondary);
+    font-size: 9px;
+    pointer-events: none;
+    paint-order: stroke;
+    stroke: var(--page);
+    stroke-width: 3px;
+    opacity: 0;
+    transition: opacity 100ms ease;
+  }
+
+  .node.label-visible text,
+  .node:hover text,
+  .node.selected text,
+  .node.match text {
+    opacity: 1;
+  }
+
+  .node.dim circle { opacity: 0.15; }
+  .node.dim text { opacity: 0 !important; }
+  .node.match circle { stroke: #ffd23f; stroke-width: 2px; }
+
+  .edge { stroke: var(--edge); stroke-width: 1px; fill: none; }
+  .edge.produced { stroke: var(--edge-strong); stroke-width: 1.4px; }
+  .edge.dim { opacity: 0.06; }
+
+  #tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    color: var(--text-primary);
+    max-width: 280px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    z-index: 10;
+  }
+
+  #tooltip .kind {
+    color: var(--text-muted);
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    display: block;
+    margin-bottom: 2px;
+  }
+
+  #panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 320px;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    padding: 18px;
+    overflow-y: auto;
+    transform: translateX(100%);
+    transition: transform 160ms ease;
+  }
+
+  #panel.open { transform: translateX(0); }
+
+  #panel-close {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 18px;
+    cursor: pointer;
+    line-height: 1;
+  }
+
+  #panel-close:hover { color: var(--text-primary); }
+
+  .panel-kind {
+    display: inline-block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-bottom: 12px;
+  }
+
+  .panel-kind.fact { background: rgba(138, 138, 134, 0.25); color: var(--fact); }
+  .panel-kind.lesson { background: rgba(95, 168, 61, 0.2); color: var(--lesson); }
+  .panel-kind.task { background: rgba(57, 135, 229, 0.2); color: var(--task); }
+
+  #panel-content h2 {
+    font-size: 14px;
+    line-height: 1.5;
+    margin: 0 0 14px;
+    color: var(--text-primary);
+  }
+
+  #panel-content .field {
+    margin-bottom: 14px;
+  }
+
+  #panel-content .field-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 4px;
+  }
+
+  #panel-content .field-value {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .tag-chip {
+    display: inline-block;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    border-radius: 999px;
+    padding: 2px 8px;
+    font-size: 11px;
+    margin: 0 4px 4px 0;
+  }
+
+  #empty-state {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 8px;
+    color: var(--text-muted);
+    font-size: 13px;
+    text-align: center;
+    padding: 24px;
+  }
+
+  #empty-state code {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 6px;
+    color: var(--text-secondary);
+  }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Secone Brain <span>&mdash; Memory Graph</span></h1>
+    <input id="search" type="text" placeholder="Search facts, lessons, tasks&hellip;" />
+    <div class="legend">
+      <button class="legend-item" data-kind="fact"><span class="dot fact"></span>Fact</button>
+      <button class="legend-item" data-kind="lesson"><span class="dot lesson"></span>Lesson</button>
+      <button class="legend-item" data-kind="task"><span class="dot task"></span>Task</button>
+    </div>
+    <div id="stats"></div>
+  </header>
+  <main>
+    <svg id="graph">
+      <g id="viewport">
+        <g id="edges"></g>
+        <g id="nodes"></g>
+      </g>
+    </svg>
+    <div id="tooltip" class="hidden"></div>
+    <aside id="panel">
+      <button id="panel-close">&times;</button>
+      <div id="panel-content"></div>
+    </aside>
+    <div id="empty-state" class="hidden">
+      <div>No memories yet.</div>
+      <div>Chat with the brain or run a task, then reload this page &mdash;<br />
+        or seed one now: <code>curl -X POST /memory -d '{"kind":"fact","content":"hello","tags":["demo"]}' -H 'content-type: application/json'</code>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  const svg = document.getElementById("graph");
+  const viewport = document.getElementById("viewport");
+  const edgesLayer = document.getElementById("edges");
+  const nodesLayer = document.getElementById("nodes");
+  const tooltip = document.getElementById("tooltip");
+  const panel = document.getElementById("panel");
+  const panelContent = document.getElementById("panel-content");
+  const statsEl = document.getElementById("stats");
+  const searchEl = document.getElementById("search");
+  const emptyState = document.getElementById("empty-state");
+  const SVG_NS = "http://www.w3.org/2000/svg";
+
+  const COLORS = { fact: "#8a8a86", lesson: "#5fa83d", task: "#3987e5" };
+  const hiddenKinds = new Set();
+
+  let width = 0, height = 0;
+  let transform = { x: 0, y: 0, k: 1 };
+  let nodes = [];
+  let edges = [];
+  let byId = new Map();
+  let selectedId = null;
+  let alpha = 1;
+  let animating = false;
+  let userInteracted = false;
+
+  function resize() {
+    const rect = svg.getBoundingClientRect();
+    width = rect.width;
+    height = rect.height;
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  function radiusFor(node) {
+    const base = node.kind === "task" ? 5 : 6;
+    return Math.min(26, base + Math.sqrt(node.degree || 0) * 3);
+  }
+
+  function applyTransform() {
+    viewport.setAttribute(
+      "transform",
+      `translate(${transform.x},${transform.y}) scale(${transform.k})`
+    );
+  }
+
+  // Keeps the graph framed while the simulation is still spreading nodes out.
+  // Stops the moment the viewer takes control (zoom/pan/drag), so it never
+  // fights their navigation.
+  function fitToView() {
+    if (!nodes.length) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const n of nodes) {
+      const r = radiusFor(n);
+      minX = Math.min(minX, n.x - r);
+      minY = Math.min(minY, n.y - r);
+      maxX = Math.max(maxX, n.x + r);
+      maxY = Math.max(maxY, n.y + r);
+    }
+    const graphW = Math.max(1, maxX - minX);
+    const graphH = Math.max(1, maxY - minY);
+    const padding = 70;
+    const k = Math.max(
+      0.15,
+      Math.min(2, (width - padding * 2) / graphW, (height - padding * 2) / graphH)
+    );
+    transform.k = k;
+    transform.x = width / 2 - ((minX + maxX) / 2) * k;
+    transform.y = height / 2 - ((minY + maxY) / 2) * k;
+    applyTransform();
+  }
+
+  // --- zoom & pan (hand-rolled, no dependency on d3-zoom) ---
+  svg.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    userInteracted = true;
+    const rect = svg.getBoundingClientRect();
+    const mx = event.clientX - rect.left;
+    const my = event.clientY - rect.top;
+    const factor = Math.exp(-event.deltaY * 0.0015);
+    const newK = Math.min(4, Math.max(0.15, transform.k * factor));
+    const scale = newK / transform.k;
+    transform.x = mx - (mx - transform.x) * scale;
+    transform.y = my - (my - transform.y) * scale;
+    transform.k = newK;
+    applyTransform();
+  }, { passive: false });
+
+  let panState = null;
+  svg.addEventListener("pointerdown", (event) => {
+    if (event.target.closest(".node")) return;
+    userInteracted = true;
+    panState = { startX: event.clientX, startY: event.clientY, ox: transform.x, oy: transform.y };
+    svg.classList.add("panning");
+    svg.setPointerCapture(event.pointerId);
+  });
+  svg.addEventListener("pointermove", (event) => {
+    if (!panState) return;
+    transform.x = panState.ox + (event.clientX - panState.startX);
+    transform.y = panState.oy + (event.clientY - panState.startY);
+    applyTransform();
+  });
+  svg.addEventListener("pointerup", () => {
+    panState = null;
+    svg.classList.remove("panning");
+  });
+
+  // --- force simulation: manual, O(n^2) repulsion + spring edges + centering ---
+  const REPEL = 5200;
+  const REPEL_RANGE_SQ = 260000; // ~510px - lets disconnected clusters push apart
+  const MIN_DIST_SQ = 100; // 10px floor - prevents a 1/distSq singularity
+  const MAX_SPEED = 45; // px/frame - bounds how far one tick can fling a node
+  const SPRING_LEN = 60;
+  const SPRING_K = 0.03;
+  const CENTER_K = 0.003;
+  const DAMPING = 0.85;
+
+  function tick() {
+    const visible = nodes.filter((n) => !hiddenKinds.has(n.kind));
+
+    for (let i = 0; i < visible.length; i++) {
+      const a = visible[i];
+      if (a.fx != null) continue;
+      let fx = (width / 2 - a.x) * CENTER_K;
+      let fy = (height / 2 - a.y) * CENTER_K;
+      for (let j = 0; j < visible.length; j++) {
+        if (i === j) continue;
+        const b = visible[j];
+        let dx = a.x - b.x, dy = a.y - b.y;
+        let distSq = dx * dx + dy * dy || 0.01;
+        if (distSq > REPEL_RANGE_SQ) continue;
+        // Floor the distance so two nodes spawning near-coincident don't
+        // divide by ~0 and detonate the simulation on the first tick.
+        distSq = Math.max(distSq, MIN_DIST_SQ);
+        const dist = Math.sqrt(distSq);
+        const force = REPEL / distSq;
+        fx += (dx / dist) * force;
+        fy += (dy / dist) * force;
+      }
+      a.ax = fx;
+      a.ay = fy;
+    }
+
+    for (const e of edges) {
+      if (hiddenKinds.has(e.a.kind) || hiddenKinds.has(e.b.kind)) continue;
+      let dx = e.b.x - e.a.x, dy = e.b.y - e.a.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+      const stretch = dist - SPRING_LEN;
+      const force = stretch * SPRING_K;
+      const fx = (dx / dist) * force, fy = (dy / dist) * force;
+      if (e.a.fx == null) { e.a.ax += fx; e.a.ay += fy; }
+      if (e.b.fx == null) { e.b.ax -= fx; e.b.ay -= fy; }
+    }
+
+    let moving = 0;
+    for (const n of visible) {
+      if (n.fx != null) { n.x = n.fx; n.y = n.fy; continue; }
+      n.vx = (n.vx + n.ax) * DAMPING;
+      n.vy = (n.vy + n.ay) * DAMPING;
+      const speed = Math.hypot(n.vx, n.vy);
+      if (speed > MAX_SPEED) {
+        n.vx = (n.vx / speed) * MAX_SPEED;
+        n.vy = (n.vy / speed) * MAX_SPEED;
+      }
+      n.x += n.vx;
+      n.y += n.vy;
+      moving += Math.abs(n.vx) + Math.abs(n.vy);
+    }
+    return moving;
+  }
+
+  function render() {
+    for (const n of nodes) {
+      if (!n.el) continue;
+      n.el.setAttribute("transform", `translate(${n.x},${n.y})`);
+    }
+    for (const e of edges) {
+      if (!e.el) continue;
+      e.el.setAttribute("x1", e.a.x);
+      e.el.setAttribute("y1", e.a.y);
+      e.el.setAttribute("x2", e.b.x);
+      e.el.setAttribute("y2", e.b.y);
+    }
+  }
+
+  function loop() {
+    const moving = tick();
+    if (!userInteracted) fitToView();
+    render();
+    if (moving > 0.15 || dragNode) {
+      requestAnimationFrame(loop);
+    } else {
+      animating = false;
+    }
+  }
+
+  function reheat() {
+    if (!animating) {
+      animating = true;
+      requestAnimationFrame(loop);
+    }
+  }
+
+  // --- drag ---
+  let dragNode = null;
+  function startDrag(node, event) {
+    dragNode = node;
+    userInteracted = true;
+    const rect = svg.getBoundingClientRect();
+    const move = (ev) => {
+      const gx = (ev.clientX - rect.left - transform.x) / transform.k;
+      const gy = (ev.clientY - rect.top - transform.y) / transform.k;
+      node.fx = gx;
+      node.fy = gy;
+      reheat();
+    };
+    const up = () => {
+      node.fx = null;
+      node.fy = null;
+      dragNode = null;
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
+  // --- selection / panel ---
+  function openPanel(node) {
+    selectedId = node.id;
+    for (const n of nodes) {
+      if (n.el) n.el.classList.toggle("selected", n.id === selectedId);
+    }
+    const tagsHtml = node.tags.length
+      ? node.tags.map((t) => `<span class="tag-chip">${escapeHtml(t)}</span>`).join("")
+      : '<span class="field-value">&mdash;</span>';
+    panelContent.innerHTML = `
+      <span class="panel-kind ${node.kind}">${node.kind}</span>
+      <h2>${escapeHtml(node.label)}</h2>
+      <div class="field">
+        <div class="field-label">Full content</div>
+        <div class="field-value">${escapeHtml(node.detail)}</div>
+      </div>
+      <div class="field">
+        <div class="field-label">Tags</div>
+        <div class="field-value">${tagsHtml}</div>
+      </div>
+      <div class="field">
+        <div class="field-label">Source</div>
+        <div class="field-value">${escapeHtml(node.source)}</div>
+      </div>
+      <div class="field">
+        <div class="field-label">Created</div>
+        <div class="field-value">${escapeHtml(node.created_at)}</div>
+      </div>
+      <div class="field">
+        <div class="field-label">Connections</div>
+        <div class="field-value">${node.degree}</div>
+      </div>
+    `;
+    panel.classList.add("open");
+  }
+
+  document.getElementById("panel-close").addEventListener("click", () => {
+    panel.classList.remove("open");
+    selectedId = null;
+    for (const n of nodes) if (n.el) n.el.classList.remove("selected");
+  });
+
+  function escapeHtml(str) {
+    const div = document.createElement("div");
+    div.textContent = str == null ? "" : String(str);
+    return div.innerHTML;
+  }
+
+  // --- search ---
+  searchEl.addEventListener("input", () => {
+    const q = searchEl.value.trim().toLowerCase();
+    for (const n of nodes) {
+      if (!n.el) continue;
+      if (!q) {
+        n.el.classList.remove("dim", "match");
+        continue;
+      }
+      const haystack = (n.label + " " + n.detail + " " + n.tags.join(" ")).toLowerCase();
+      const hit = haystack.includes(q);
+      n.el.classList.toggle("match", hit);
+      n.el.classList.toggle("dim", !hit);
+    }
+  });
+
+  // --- legend toggles ---
+  document.querySelectorAll(".legend-item").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const kind = btn.dataset.kind;
+      if (hiddenKinds.has(kind)) {
+        hiddenKinds.delete(kind);
+        btn.classList.remove("off");
+      } else {
+        hiddenKinds.add(kind);
+        btn.classList.add("off");
+      }
+      for (const n of nodes) {
+        if (n.el) n.el.classList.toggle("hidden", hiddenKinds.has(n.kind));
+      }
+      for (const e of edges) {
+        if (e.el) {
+          e.el.classList.toggle("hidden", hiddenKinds.has(e.a.kind) || hiddenKinds.has(e.b.kind));
+        }
+      }
+      reheat();
+    });
+  });
+
+  // --- build ---
+  function buildGraph(data) {
+    const spread = Math.min(width, height) * 0.5 + data.nodes.length * 2;
+    nodes = data.nodes.map((n) => ({
+      ...n,
+      x: width / 2 + (Math.random() - 0.5) * spread,
+      y: height / 2 + (Math.random() - 0.5) * spread,
+      vx: 0, vy: 0, ax: 0, ay: 0,
+      fx: null, fy: null,
+    }));
+    byId = new Map(nodes.map((n) => [n.id, n]));
+    edges = data.edges
+      .map((e) => ({ ...e, a: byId.get(e.source), b: byId.get(e.target) }))
+      .filter((e) => e.a && e.b);
+
+    statsEl.textContent = `${nodes.length} memories · ${edges.length} connections`;
+    emptyState.classList.toggle("hidden", nodes.length > 0);
+
+    edgesLayer.innerHTML = "";
+    for (const e of edges) {
+      const line = document.createElementNS(SVG_NS, "line");
+      line.setAttribute("class", "edge" + (e.kind === "produced" ? " produced" : ""));
+      edgesLayer.appendChild(line);
+      e.el = line;
+    }
+
+    const degrees = nodes.map((n) => n.degree || 0).sort((a, b) => b - a);
+    const labelThreshold = degrees.length > 40 ? degrees[Math.floor(degrees.length * 0.25)] : 0;
+
+    nodesLayer.innerHTML = "";
+    for (const n of nodes) {
+      const g = document.createElementNS(SVG_NS, "g");
+      g.setAttribute("class", "node" + ((n.degree || 0) >= labelThreshold ? " label-visible" : ""));
+
+      const circle = document.createElementNS(SVG_NS, "circle");
+      circle.setAttribute("r", radiusFor(n));
+      circle.setAttribute("fill", COLORS[n.kind] || COLORS.fact);
+      g.appendChild(circle);
+
+      const label = document.createElementNS(SVG_NS, "text");
+      label.textContent = n.label.length > 28 ? n.label.slice(0, 27) + "…" : n.label;
+      label.setAttribute("x", radiusFor(n) + 4);
+      label.setAttribute("y", 3);
+      g.appendChild(label);
+
+      g.addEventListener("pointerenter", (event) => {
+        tooltip.classList.remove("hidden");
+        tooltip.innerHTML = `<span class="kind">${n.kind}</span>${escapeHtml(n.label)}`;
+      });
+      g.addEventListener("pointermove", (event) => {
+        const rect = svg.getBoundingClientRect();
+        tooltip.style.left = event.clientX - rect.left + 14 + "px";
+        tooltip.style.top = event.clientY - rect.top + 14 + "px";
+      });
+      g.addEventListener("pointerleave", () => tooltip.classList.add("hidden"));
+      g.addEventListener("pointerdown", (event) => {
+        event.stopPropagation();
+        startDrag(n, event);
+      });
+      g.addEventListener("click", () => openPanel(n));
+
+      nodesLayer.appendChild(g);
+      n.el = g;
+    }
+
+    reheat();
+  }
+
+  fetch("/graph/data")
+    .then((r) => r.json())
+    .then(buildGraph)
+    .catch((err) => {
+      emptyState.classList.remove("hidden");
+      emptyState.innerHTML = `<div>Couldn't load the graph: ${escapeHtml(err.message)}</div>`;
+    });
+})();
+</script>
+</body>
+</html>

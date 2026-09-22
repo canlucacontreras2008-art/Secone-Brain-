@@ -23,7 +23,21 @@ stored as long-term memory it recalls on future work).
   it finds as `fact` memories.
 
 Nothing here is a black box: every fact and lesson the brain has stored is
-visible and editable via `GET /memory` and `POST /memory`.
+visible and editable via `GET /memory` and `POST /memory` - or visually, as a
+graph, at `/graph`.
+
+## Memory graph (`/graph`)
+
+A force-directed view of everything the brain knows: gray nodes are facts,
+green nodes are lessons, blue nodes are tasks. Edges are real relationships,
+not a layout guess - a task links to the lesson it produced, and memories
+link to each other when they share a tag. Search filters and highlights
+matching nodes, the legend toggles a kind on/off, and clicking a node opens
+its full content in a side panel.
+
+It's a single self-contained page (`app/static/graph.html`) with a small
+hand-rolled force simulation - no D3 or other JS dependency, so the feature
+works offline and has nothing to vendor or build.
 
 ## Setup
 
@@ -40,14 +54,16 @@ uvicorn app.main:app --reload
 
 ## Endpoints
 
-| Method | Path      | Body                          | What it does |
-|--------|-----------|--------------------------------|---------------|
-| POST   | `/chat`   | `{"message": "..."}`           | Chat turn. Can search the web and read/write memory. |
-| POST   | `/task`   | `{"description": "..."}`       | Runs a task end-to-end, then reflects and stores a lesson. Returns `{result, reflection}`. |
-| POST   | `/learn`  | `{"topic": "..."}`             | Proactively researches a topic on the web and stores facts. |
-| GET    | `/memory` | `?kind=fact\|lesson&limit=100` | Lists stored memories. |
-| POST   | `/memory` | `{"kind", "content", "tags"}`  | Manually add a memory. |
-| GET    | `/health` | -                               | Liveness check. |
+| Method | Path         | Body                          | What it does |
+|--------|--------------|--------------------------------|---------------|
+| POST   | `/chat`      | `{"message": "..."}`           | Chat turn. Can search the web and read/write memory. |
+| POST   | `/task`      | `{"description": "..."}`       | Runs a task end-to-end, then reflects and stores a lesson. Returns `{task_id, result, reflection}`. |
+| POST   | `/learn`     | `{"topic": "..."}`             | Proactively researches a topic on the web and stores facts. |
+| GET    | `/memory`    | `?kind=fact\|lesson&limit=100` | Lists stored memories. |
+| POST   | `/memory`    | `{"kind", "content", "tags"}`  | Manually add a memory. |
+| GET    | `/graph`     | -                               | The memory graph UI (open in a browser). |
+| GET    | `/graph/data`| -                               | `{nodes, edges}` JSON backing the graph UI. |
+| GET    | `/health`    | -                               | Liveness check. |
 
 ### Example
 
@@ -65,10 +81,12 @@ curl localhost:8000/memory?kind=lesson
 pytest
 ```
 
-The memory-store tests run against a temp SQLite file and need no API key.
-Exercising `Brain` itself needs `ANTHROPIC_API_KEY` since it calls the live
-API - there's no mocked test for it here by design, to avoid a mock that
-drifts from the real tool-use response shape.
+The memory, graph, and reflection-parsing tests run against a temp SQLite
+file (or a stub Anthropic client for `_reflect`) and need no API key.
+Exercising the full agentic loop (`Brain.chat` / `Brain.run_task`'s tool-use
+turns) needs `ANTHROPIC_API_KEY` since it calls the live API - there's no
+mocked test for that here by design, to avoid a mock that drifts from the
+real tool-use response shape.
 
 ## Extending it
 
