@@ -69,6 +69,37 @@ rest; the legend toggles a kind on/off. Names stay hidden until you hover,
 select, or search for them, so the default view stays a clean, ambient
 scene rather than a wall of text.
 
+Works on a phone, too: one-finger drag rotates, pinch zooms in and out, and
+tap a memory for its detail panel (the hint text switches to touch wording
+automatically on a touch device). The header, search bar, and queue panel
+resize to fit a narrow screen instead of overflowing it, and every button
+has a bigger tap target than its on-screen size suggests.
+
+## Using it from your phone
+
+The interface is just a page the FastAPI server serves, so your phone needs
+to be able to reach that server over the network - by default `uvicorn`
+only listens on `localhost`, which only your own computer can reach.
+
+1. Start the server bound to your machine's LAN address instead of just
+   `localhost`:
+   ```bash
+   uvicorn app.main:app --host 0.0.0.0 --reload
+   ```
+2. Find your computer's local IP address (Windows: `ipconfig`, look for
+   "IPv4 Address" under your active adapter; macOS/Linux: `ifconfig` or
+   `ip addr`). It'll look like `192.168.x.x`.
+3. On your phone, connect to the **same Wi-Fi network** and open
+   `http://<that-IP>:8000/graph` in the browser.
+
+Everything - chat, tasks, Wikipedia scanning, the queue - works from the
+phone exactly the same way, since it's all plain HTTP hitting the same
+server; there's nothing Wikipedia-scan-specific to make work separately.
+
+**Only do this on a trusted home network, never on public Wi-Fi** -
+`--host 0.0.0.0` makes the API (including everything in memory) reachable
+by any device on that network, not just your phone.
+
 A **Queue** button in the header opens a panel for managing the research
 queue entirely from the browser - no `curl` needed. Add a topic (typed or
 Enter), remove one with its `×`, **Run** to work through everything pending,

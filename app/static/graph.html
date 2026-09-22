@@ -125,6 +125,9 @@
     height: 100%;
     cursor: grab;
     background: var(--page);
+    /* Otherwise the browser's own pan/pinch-zoom fights our pointer-based
+       drag-rotate and pinch-zoom on touch devices. */
+    touch-action: none;
   }
 
   canvas.dragging { cursor: grabbing; }
@@ -157,7 +160,7 @@
     top: 0;
     right: 0;
     bottom: 0;
-    width: 320px;
+    width: min(320px, 88vw);
     background: var(--surface);
     border-left: 1px solid var(--border);
     padding: 18px;
@@ -171,14 +174,15 @@
 
   #panel-close {
     position: absolute;
-    top: 10px;
-    right: 12px;
+    top: 6px;
+    right: 8px;
     background: none;
     border: none;
     color: var(--text-muted);
     font-size: 18px;
     cursor: pointer;
     line-height: 1;
+    padding: 8px;
   }
 
   #panel-close:hover { color: var(--text-primary); }
@@ -323,7 +327,7 @@
     position: absolute;
     top: 16px;
     right: 16px;
-    width: 240px;
+    width: min(240px, calc(100vw - 32px));
     max-height: 300px;
     background: var(--surface);
     border: 1px solid var(--border);
@@ -358,7 +362,7 @@
     color: var(--text-secondary);
     font-size: 10px;
     font-weight: 400;
-    padding: 2px 7px;
+    padding: 5px 9px;
     cursor: pointer;
   }
 
@@ -373,6 +377,8 @@
     font-size: 14px;
     cursor: pointer;
     line-height: 1;
+    padding: 6px;
+    margin: -6px;
   }
 
   #queue-panel-close:hover { color: var(--text-primary); }
@@ -405,7 +411,7 @@
     border-radius: 4px;
     color: var(--text-secondary);
     cursor: pointer;
-    padding: 2px 9px;
+    padding: 5px 11px;
     font-size: 13px;
     flex: none;
   }
@@ -459,10 +465,11 @@
     border: none;
     color: var(--text-muted);
     cursor: pointer;
-    font-size: 14px;
+    font-size: 16px;
     line-height: 1;
     flex: none;
-    padding: 0 2px;
+    padding: 6px;
+    margin: -6px;
   }
 
   .queue-row-delete:hover { color: #e66767; }
@@ -503,6 +510,15 @@
       </div>
     </div>
     <div id="hint">Drag to rotate &middot; scroll to zoom &middot; click a memory for details</div>
+    <script>
+      // Touch devices get "pinch to zoom" and "tap" instead - real capability
+      // check (max touch points), not just viewport width, so a touchscreen
+      // laptop or a desktop with a mouse both get the wording that fits them.
+      if (navigator.maxTouchPoints > 0) {
+        document.getElementById("hint").textContent =
+          "Drag to rotate · pinch to zoom · tap a memory for details";
+      }
+    </script>
     <aside id="queue-panel" class="hidden">
       <div id="queue-panel-header">
         <span>Research queue</span>
@@ -1083,15 +1099,42 @@
     requestAnimationFrame(loop);
   }
 
-  // --- drag to rotate / wheel to zoom (hand-rolled, no 3D library) ---
+  // --- drag to rotate / wheel or pinch to zoom (hand-rolled, no 3D library) ---
+  // Pointer Events unify mouse/touch/pen, and each touch gets its own
+  // pointerId - tracking all active ones is enough to support single-finger
+  // drag-rotate and two-finger pinch-zoom without separate touch handlers.
   let dragState = null;
+  const activePointers = new Map();
+  let pinch = null;
+
+  function pinchDistance() {
+    const pts = Array.from(activePointers.values());
+    return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+  }
+
   canvas.addEventListener("pointerdown", (event) => {
-    dragState = { x: event.clientX, y: event.clientY, moved: false };
-    autoRotate = false;
-    canvas.classList.add("dragging");
+    activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     canvas.setPointerCapture(event.pointerId);
+
+    if (activePointers.size === 2) {
+      dragState = null; // a second finger landing always means "start pinching," not dragging
+      pinch = { startDist: pinchDistance() || 1, startZoom: zoom };
+    } else if (activePointers.size === 1) {
+      dragState = { x: event.clientX, y: event.clientY, moved: false };
+      autoRotate = false;
+      canvas.classList.add("dragging");
+    }
   });
   canvas.addEventListener("pointermove", (event) => {
+    if (activePointers.has(event.pointerId)) {
+      activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    }
+
+    if (pinch && activePointers.size === 2) {
+      zoom = Math.max(0.5, Math.min(2.5, pinch.startZoom * (pinchDistance() / pinch.startDist)));
+      return;
+    }
+
     if (dragState) {
       const dx = event.clientX - dragState.x;
       const dy = event.clientY - dragState.y;
@@ -1104,13 +1147,17 @@
     }
     handleHover(event);
   });
-  canvas.addEventListener("pointerup", (event) => {
+  function releasePointer(event) {
+    activePointers.delete(event.pointerId);
+    if (activePointers.size < 2) pinch = null;
     canvas.classList.remove("dragging");
     if (dragState && !dragState.moved) {
       handleClick(event);
     }
     dragState = null;
-  });
+  }
+  canvas.addEventListener("pointerup", releasePointer);
+  canvas.addEventListener("pointercancel", releasePointer);
   canvas.addEventListener("wheel", (event) => {
     event.preventDefault();
     zoom = Math.max(0.5, Math.min(2.5, zoom * Math.exp(-event.deltaY * 0.001)));
