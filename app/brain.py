@@ -3,7 +3,7 @@ from typing import List, Optional
 
 import anthropic
 
-from . import config, memory, tasks, tools
+from . import config, memory, research_queue, tasks, tools
 
 SYSTEM_PROMPT = """You are Secone, a self-improving AI assistant.
 
@@ -169,6 +169,27 @@ class Brain:
         summary = self._run_loop([{"role": "user", "content": prompt}])
         return {"summary": summary, "recent_facts": memory.list_memories(kind="fact", limit=20)}
 
+    def _scan_one_wikipedia_topic(self, topic: str) -> str:
+        prompt = (
+            f'Search Wikipedia for "{topic}", fetch the most relevant '
+            "article, and read it. Call `remember` with kind=fact for "
+            "each concrete, verifiable fact you find - names, dates, "
+            "numbers, definitions, relationships. Aim for 8-15 facts if "
+            "the article supports it. Tag every fact with 2-4 short "
+            f'topical keywords, always including "wikipedia" and "{topic}". '
+            "Then give a one-paragraph summary of the article."
+        )
+        return self._run_loop(
+            [{"role": "user", "content": prompt}],
+            tool_list=tools.WIKIPEDIA_TOOLS,
+            # A full article can need search + fetch + ~15 individual
+            # `remember` calls - the default iteration cap (tuned for
+            # chat/task turns) cuts a thorough scan off before it can
+            # give a closing summary, even though the facts up to that
+            # point are still saved.
+            max_iterations=20,
+        )
+
     def scan_wikipedia(self, topics: List[str]) -> dict:
         """Learn from Wikipedia specifically: for each topic, search Wikipedia,
         fetch the most relevant article, and store concrete facts from it.
@@ -176,27 +197,29 @@ class Brain:
         Search and fetch are both domain-restricted to wikipedia.org
         (see tools.WIKIPEDIA_TOOLS) so this can't wander off onto the open web.
         """
-        scanned = []
-        for topic in topics:
-            prompt = (
-                f'Search Wikipedia for "{topic}", fetch the most relevant '
-                "article, and read it. Call `remember` with kind=fact for "
-                "each concrete, verifiable fact you find - names, dates, "
-                "numbers, definitions, relationships. Aim for 8-15 facts if "
-                "the article supports it. Tag every fact with 2-4 short "
-                f'topical keywords, always including "wikipedia" and "{topic}". '
-                "Then give a one-paragraph summary of the article."
-            )
-            summary = self._run_loop(
-                [{"role": "user", "content": prompt}],
-                tool_list=tools.WIKIPEDIA_TOOLS,
-                # A full article can need search + fetch + ~15 individual
-                # `remember` calls - the default iteration cap (tuned for
-                # chat/task turns) cuts a thorough scan off before it can
-                # give a closing summary, even though the facts up to that
-                # point are still saved.
-                max_iterations=20,
-            )
-            scanned.append({"topic": topic, "summary": summary})
-
+        scanned = [{"topic": topic, "summary": self._scan_one_wikipedia_topic(topic)} for topic in topics]
         return {"scanned": scanned, "recent_facts": memory.list_memories(kind="fact", limit=30)}
+
+    def run_research_queue(self, limit: Optional[int] = None) -> dict:
+        """Work through the research queue: pop pending topics one at a time
+        and Wikipedia-scan each. Persisted in SQLite (not just held in memory),
+        so queuing a topic and actually running it can happen in separate
+        requests - useful since a thorough scan can take a while.
+        """
+        processed = []
+        count = 0
+        while limit is None or count < limit:
+            item = research_queue.next_pending()
+            if item is None:
+                break
+            research_queue.mark_running(item["id"])
+            try:
+                summary = self._scan_one_wikipedia_topic(item["topic"])
+                research_queue.mark_done(item["id"], summary)
+                processed.append({"id": item["id"], "topic": item["topic"], "status": "done", "summary": summary})
+            except Exception as exc:  # keep the queue moving even if one topic fails
+                research_queue.mark_error(item["id"], str(exc))
+                processed.append({"id": item["id"], "topic": item["topic"], "status": "error", "error": str(exc)})
+            count += 1
+
+        return {"processed": processed, "remaining": len(research_queue.list_queue(status="pending"))}

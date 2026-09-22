@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from . import db, graph
 from . import memory as memory_store
+from . import research_queue
 from .brain import Brain
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -46,6 +47,10 @@ class WikipediaScanRequest(BaseModel):
     topics: List[str]
 
 
+class QueueRequest(BaseModel):
+    topics: List[str]
+
+
 class MemoryIn(BaseModel):
     kind: str
     content: str
@@ -75,6 +80,21 @@ def learn(req: LearnRequest):
 @app.post("/wikipedia/scan")
 def scan_wikipedia(req: WikipediaScanRequest):
     return brain.scan_wikipedia(req.topics)
+
+
+@app.post("/queue")
+def add_to_queue(req: QueueRequest):
+    return {"queued": research_queue.enqueue(req.topics)}
+
+
+@app.get("/queue")
+def get_queue(status: Optional[str] = None, limit: int = 200):
+    return research_queue.list_queue(status=status, limit=limit)
+
+
+@app.post("/queue/run")
+def run_queue(limit: Optional[int] = None):
+    return brain.run_research_queue(limit=limit)
 
 
 @app.get("/memory")

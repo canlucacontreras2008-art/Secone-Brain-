@@ -26,6 +26,12 @@ stored as long-term memory it recalls on future work).
   concrete facts from it. Both the search and fetch tools are domain-locked
   to `wikipedia.org` (see `tools.WIKIPEDIA_TOOLS`), so this can't wander off
   onto the open web even if the model tries to.
+- **Research queue** (`/queue`) - a persisted, durable to-do list of topics
+  to Wikipedia-scan, backed by SQLite (`app/research_queue.py`). Queuing a
+  topic and actually running the scan are separate steps/requests - useful
+  because a thorough scan can take a while, so you can queue up a batch of
+  topics now and work through them (`/queue/run`) at your own pace, without
+  one giant blocking request.
 
 Nothing here is a black box: every fact and lesson the brain has stored is
 visible and editable via `GET /memory` and `POST /memory` - or visually, as a
@@ -74,6 +80,9 @@ uvicorn app.main:app --reload
 | POST   | `/task`      | `{"description": "..."}`       | Runs a task end-to-end, then reflects and stores a lesson. Returns `{task_id, result, reflection}`. |
 | POST   | `/learn`     | `{"topic": "..."}`             | Proactively researches a topic on the web and stores facts. |
 | POST   | `/wikipedia/scan` | `{"topics": ["...", "..."]}` | Scans each topic on Wikipedia specifically and stores facts. |
+| POST   | `/queue`     | `{"topics": ["...", "..."]}`   | Adds topics to the research queue (status `pending`). |
+| GET    | `/queue`     | `?status=pending\|running\|done\|error` | Lists queue items and their status. |
+| POST   | `/queue/run` | `?limit=N` (optional)          | Works through pending queue items via `/wikipedia/scan`'s logic. Omit `limit` to drain the whole queue. |
 | GET    | `/memory`    | `?kind=fact\|lesson&limit=100` | Lists stored memories. |
 | POST   | `/memory`    | `{"kind", "content", "tags"}`  | Manually add a memory. |
 | GET    | `/graph`     | -                               | The memory graph UI (open in a browser). |
@@ -90,6 +99,16 @@ curl -X POST localhost:8000/task \
 curl -X POST localhost:8000/wikipedia/scan \
   -H 'content-type: application/json' \
   -d '{"topics": ["Quantum computing", "Ada Lovelace"]}'
+
+# Queue a batch of coding + mechanics topics, then work through them
+curl -X POST localhost:8000/queue \
+  -H 'content-type: application/json' \
+  -d '{"topics": ["Algorithm", "Data structure", "Object-oriented programming", "Version control", "Compiler", "Software design pattern", "Machine learning", "Classical mechanics", "Newton'"'"'s laws of motion", "Mechanical engineering", "Simple machine", "Kinematics", "Thermodynamics", "Fluid mechanics", "Gear"]}'
+
+curl localhost:8000/queue?status=pending
+
+# Process a few at a time (each scan can take a minute or two) - omit ?limit to drain the whole queue
+curl -X POST "localhost:8000/queue/run?limit=3"
 
 curl localhost:8000/memory?kind=lesson
 ```
