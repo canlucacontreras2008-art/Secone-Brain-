@@ -1,6 +1,31 @@
+import threading
 from typing import List, Optional
 
 from . import db
+
+# In-process stop signal for run_research_queue(). A plain module-level
+# Event (thread-safe) is enough here - this is a single-server personal app,
+# not a distributed job queue. Deliberately NOT wired into Brain._run_loop
+# itself: that's shared by /chat and /task too, and a "stop learning" click
+# must never abort an unrelated concurrent chat request.
+_stop_event = threading.Event()
+
+
+def request_stop() -> None:
+    _stop_event.set()
+
+
+def clear_stop() -> None:
+    _stop_event.clear()
+
+
+def stop_requested() -> bool:
+    return _stop_event.is_set()
+
+
+def delete(item_id: int) -> None:
+    with db.get_conn() as conn:
+        conn.execute("DELETE FROM research_queue WHERE id = ?", (item_id,))
 
 
 def enqueue(topics: List[str]) -> List[dict]:

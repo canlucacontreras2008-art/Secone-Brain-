@@ -223,10 +223,20 @@ class Brain:
         and Wikipedia-scan each. Persisted in SQLite (not just held in memory),
         so queuing a topic and actually running it can happen in separate
         requests - useful since a thorough scan can take a while.
+
+        Checks the stop flag between topics (not mid-scan) - a click on
+        "Stop" lets whatever topic is in flight finish, then halts before
+        starting the next one, rather than aborting an Anthropic API call
+        mid-conversation.
         """
+        research_queue.clear_stop()
         processed = []
         count = 0
+        stopped = False
         while limit is None or count < limit:
+            if research_queue.stop_requested():
+                stopped = True
+                break
             item = research_queue.next_pending()
             if item is None:
                 break
@@ -240,4 +250,8 @@ class Brain:
                 processed.append({"id": item["id"], "topic": item["topic"], "status": "error", "error": str(exc)})
             count += 1
 
-        return {"processed": processed, "remaining": len(research_queue.list_queue(status="pending"))}
+        return {
+            "processed": processed,
+            "remaining": len(research_queue.list_queue(status="pending")),
+            "stopped": stopped,
+        }

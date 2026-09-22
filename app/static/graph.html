@@ -345,7 +345,28 @@
     align-items: center;
   }
 
-  #queue-panel-header button {
+  .queue-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  #queue-run, #queue-stop {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: 400;
+    padding: 2px 7px;
+    cursor: pointer;
+  }
+
+  #queue-run:hover, #queue-stop:hover { border-color: var(--text-secondary); color: var(--text-primary); }
+  #queue-run:disabled, #queue-stop:disabled { opacity: 0.35; cursor: default; }
+  #queue-run:disabled:hover, #queue-stop:disabled:hover { border-color: var(--border); color: var(--text-secondary); }
+
+  #queue-panel-close {
     background: none;
     border: none;
     color: var(--text-muted);
@@ -354,7 +375,42 @@
     line-height: 1;
   }
 
-  #queue-panel-header button:hover { color: var(--text-primary); }
+  #queue-panel-close:hover { color: var(--text-primary); }
+
+  #queue-add-row {
+    display: flex;
+    gap: 6px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    flex: none;
+  }
+
+  #queue-add-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 11px;
+    padding: 4px 7px;
+  }
+
+  #queue-add-input::placeholder { color: var(--text-muted); }
+  #queue-add-input:focus { outline: none; border-color: var(--text-secondary); }
+
+  #queue-add-button {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 2px 9px;
+    font-size: 13px;
+    flex: none;
+  }
+
+  #queue-add-button:hover { color: var(--text-primary); border-color: var(--text-secondary); }
 
   #queue-list {
     overflow-y: auto;
@@ -391,9 +447,30 @@
   }
 
   .queue-row-topic {
+    flex: 1 1 auto;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .queue-row-delete {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    flex: none;
+    padding: 0 2px;
+  }
+
+  .queue-row-delete:hover { color: #e66767; }
+
+  .queue-empty-hint {
+    padding: 10px 12px;
+    font-size: 12px;
+    color: var(--text-muted);
   }
 
   .hidden { display: none !important; }
@@ -409,6 +486,7 @@
       <button class="legend-item" data-kind="lesson"><span class="dot lesson"></span>Lesson</button>
       <button class="legend-item" data-kind="task"><span class="dot task"></span>Task</button>
     </div>
+    <button id="queue-toggle-btn" class="legend-item">Queue</button>
     <div id="stats"></div>
   </header>
   <main>
@@ -428,7 +506,15 @@
     <aside id="queue-panel" class="hidden">
       <div id="queue-panel-header">
         <span>Research queue</span>
-        <button id="queue-panel-close">&times;</button>
+        <div class="queue-header-actions">
+          <button id="queue-run" title="Run the queue">Run</button>
+          <button id="queue-stop" title="Stop after the current topic finishes">Stop</button>
+          <button id="queue-panel-close">&times;</button>
+        </div>
+      </div>
+      <div id="queue-add-row">
+        <input id="queue-add-input" type="text" placeholder="Add a topic&hellip;" />
+        <button id="queue-add-button" title="Add to queue">+</button>
       </div>
       <div id="queue-list"></div>
     </aside>
@@ -1121,7 +1207,7 @@
   });
 
   // --- legend toggles ---
-  document.querySelectorAll(".legend-item").forEach((btn) => {
+  document.querySelectorAll(".legend-item[data-kind]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const kind = btn.dataset.kind;
       if (hiddenKinds.has(kind)) {
@@ -1150,49 +1236,96 @@
     requestAnimationFrame(loop);
   }
 
-  // --- research queue: progress bar + live list, polled while anything's queued ---
+  // --- research queue: progress bar + live, editable list ---
   const learningBar = document.getElementById("learning-bar");
   const learningBarFill = document.getElementById("learning-bar-fill");
   const learningBarCounts = document.getElementById("learning-bar-counts");
   const queuePanel = document.getElementById("queue-panel");
   const queueList = document.getElementById("queue-list");
-  let queuePanelClosed = false;
+  const queueRunBtn = document.getElementById("queue-run");
+  const queueStopBtn = document.getElementById("queue-stop");
+  const queueAddInput = document.getElementById("queue-add-input");
+  let queuePanelOpen = false;
 
+  function setQueuePanelOpen(open) {
+    queuePanelOpen = open;
+    queuePanel.classList.toggle("hidden", !open);
+  }
+
+  document.getElementById("queue-toggle-btn").addEventListener("click", () => {
+    setQueuePanelOpen(!queuePanelOpen);
+  });
   document.getElementById("queue-panel-close").addEventListener("click", () => {
-    queuePanelClosed = true;
-    queuePanel.classList.add("hidden");
+    setQueuePanelOpen(false);
+  });
+
+  queueRunBtn.addEventListener("click", () => {
+    queueRunBtn.disabled = true; // fire-and-forget - polling reflects progress as it happens
+    fetch("/queue/run", { method: "POST" })
+      .then(pollQueue)
+      .catch(() => {});
+  });
+  queueStopBtn.addEventListener("click", () => {
+    fetch("/queue/stop", { method: "POST" }).then(pollQueue).catch(() => {});
+  });
+
+  function addQueueTopic() {
+    const topic = queueAddInput.value.trim();
+    if (!topic) return;
+    queueAddInput.value = "";
+    fetch("/queue", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ topics: [topic] }),
+    })
+      .then(pollQueue)
+      .catch(() => {});
+  }
+  document.getElementById("queue-add-button").addEventListener("click", addQueueTopic);
+  queueAddInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") addQueueTopic();
+  });
+
+  function deleteQueueItem(id) {
+    fetch(`/queue/${id}`, { method: "DELETE" }).then(pollQueue).catch(() => {});
+  }
+  // Event delegation - queue-list rows are re-rendered wholesale on every
+  // poll, so a listener on the container outlives any individual row.
+  queueList.addEventListener("click", (event) => {
+    const btn = event.target.closest(".queue-row-delete");
+    if (btn) deleteQueueItem(Number(btn.dataset.id));
   });
 
   function renderQueue(items) {
-    if (!items.length) {
-      learningBar.classList.add("hidden");
-      queuePanel.classList.add("hidden");
-      return;
-    }
-
+    const total = items.length;
     const done = items.filter((i) => i.status === "done").length;
     const errored = items.filter((i) => i.status === "error").length;
-    const total = items.length;
+    const anyRunning = items.some((i) => i.status === "running");
 
-    learningBar.classList.remove("hidden");
-    learningBarFill.style.width = `${(done / total) * 100}%`;
-    learningBarCounts.textContent = errored
-      ? `${done}/${total} learned · ${errored} failed`
-      : `${done}/${total} learned`;
-
-    if (!queuePanelClosed) {
-      queuePanel.classList.remove("hidden");
-      queueList.innerHTML = items
-        .map(
-          (item) => `
-            <div class="queue-row">
-              <span class="queue-status-dot ${item.status}"></span>
-              <span class="queue-row-topic" title="${escapeHtml(item.topic)}">${escapeHtml(item.topic)}</span>
-            </div>
-          `
-        )
-        .join("");
+    learningBar.classList.toggle("hidden", total === 0);
+    if (total > 0) {
+      learningBarFill.style.width = `${(done / total) * 100}%`;
+      learningBarCounts.textContent = errored
+        ? `${done}/${total} learned · ${errored} failed`
+        : `${done}/${total} learned`;
     }
+
+    queueRunBtn.disabled = anyRunning;
+    queueStopBtn.disabled = !anyRunning;
+
+    queueList.innerHTML = total
+      ? items
+          .map(
+            (item) => `
+              <div class="queue-row">
+                <span class="queue-status-dot ${item.status}"></span>
+                <span class="queue-row-topic" title="${escapeHtml(item.topic)}">${escapeHtml(item.topic)}</span>
+                <button class="queue-row-delete" data-id="${item.id}" title="Remove">&times;</button>
+              </div>
+            `
+          )
+          .join("")
+      : '<div class="queue-empty-hint">No topics queued yet - add one above.</div>';
   }
 
   function pollQueue() {

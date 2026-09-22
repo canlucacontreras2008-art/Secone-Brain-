@@ -69,12 +69,16 @@ rest; the legend toggles a kind on/off. Names stay hidden until you hover,
 select, or search for them, so the default view stays a clean, ambient
 scene rather than a wall of text.
 
-If you've queued anything via `/queue`, the page also polls `GET /queue`
-every few seconds and shows a learning progress bar along the bottom
-(`done/total learned`, plus a failed count if any) and a live queue list in
-the top-right corner (a colored dot per item - gray pending, pulsing amber
-running, green done, red error). Both stay hidden entirely if the queue has
-never been used; the queue list has its own close button per session.
+A **Queue** button in the header opens a panel for managing the research
+queue entirely from the browser - no `curl` needed. Add a topic (typed or
+Enter), remove one with its `×`, **Run** to work through everything pending,
+**Stop** to halt after the current topic finishes (it won't abort an
+Anthropic API call mid-conversation, just stop starting new ones). The panel
+polls `GET /queue` every few seconds, so status - a colored dot per item:
+gray pending, pulsing amber running, green done, red error - stays live
+whether the run was started here or via `curl`. A learning progress bar
+along the bottom (`done/total learned`, plus a failed count if any) tracks
+the same data and appears automatically once anything's been queued.
 
 It's a single self-contained page (`app/static/graph.html`) - a hand-rolled
 3D projection (rotate, perspective-project, painter's-algorithm depth sort)
@@ -107,6 +111,8 @@ uvicorn app.main:app --reload
 | POST   | `/queue`     | `{"topics": ["...", "..."]}`   | Adds topics to the research queue (status `pending`). |
 | GET    | `/queue`     | `?status=pending\|running\|done\|error` | Lists queue items and their status. |
 | POST   | `/queue/run` | `?limit=N` (optional)          | Works through pending queue items via `/wikipedia/scan`'s logic. Omit `limit` to drain the whole queue. |
+| POST   | `/queue/stop`| -                               | Signals the running queue to halt after its current topic finishes. |
+| DELETE | `/queue/{id}`| -                               | Removes one queue item by id, any status. |
 | GET    | `/memory`    | `?kind=fact\|lesson&limit=100` | Lists stored memories. |
 | POST   | `/memory`    | `{"kind", "content", "topic", "tags"}` | Manually add a memory. `topic` groups it with others on the same subject. |
 | GET    | `/graph`     | -                               | The memory graph UI (open in a browser). |

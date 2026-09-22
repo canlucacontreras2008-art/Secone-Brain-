@@ -98,6 +98,18 @@ def run_queue(limit: Optional[int] = None):
     return brain.run_research_queue(limit=limit)
 
 
+@app.post("/queue/stop")
+def stop_queue():
+    research_queue.request_stop()
+    return {"stopped": True}
+
+
+@app.delete("/queue/{item_id}")
+def delete_queue_item(item_id: int):
+    research_queue.delete(item_id)
+    return {"deleted": item_id}
+
+
 @app.get("/memory")
 def get_memory(kind: Optional[str] = None, limit: int = 100):
     return memory_store.list_memories(kind=kind, limit=limit)

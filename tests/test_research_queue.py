@@ -12,7 +12,9 @@ def temp_db(monkeypatch):
     os.close(fd)
     monkeypatch.setattr(config, "DB_PATH", path)
     db.init_db()
+    research_queue.clear_stop()  # the stop flag is a module-level singleton
     yield
+    research_queue.clear_stop()
     os.remove(path)
 
 
@@ -59,3 +61,27 @@ def test_list_queue_filters_by_status():
 
     assert len(pending) == 2
     assert len(done) == 0
+
+
+def test_delete_removes_the_item():
+    [a, b] = research_queue.enqueue(["A", "B"])
+
+    research_queue.delete(a["id"])
+
+    remaining = research_queue.list_queue()
+    assert [i["id"] for i in remaining] == [b["id"]]
+
+
+def test_delete_of_missing_id_is_a_harmless_noop():
+    research_queue.delete(999)  # never raises, just matches zero rows
+    assert research_queue.list_queue() == []
+
+
+def test_stop_flag_round_trip():
+    assert research_queue.stop_requested() is False
+
+    research_queue.request_stop()
+    assert research_queue.stop_requested() is True
+
+    research_queue.clear_stop()
+    assert research_queue.stop_requested() is False

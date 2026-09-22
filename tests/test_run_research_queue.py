@@ -15,7 +15,9 @@ def temp_db(monkeypatch):
     os.close(fd)
     monkeypatch.setattr(config, "DB_PATH", path)
     db.init_db()
+    research_queue.clear_stop()  # the stop flag is a module-level singleton
     yield
+    research_queue.clear_stop()
     os.remove(path)
 
 
@@ -116,4 +118,26 @@ def test_run_research_queue_with_empty_queue_is_a_noop():
 
     result = brain.run_research_queue()
 
-    assert result == {"processed": [], "remaining": 0}
+    assert result == {"processed": [], "remaining": 0, "stopped": False}
+
+
+def test_run_research_queue_stops_between_topics_not_mid_scan():
+    research_queue.enqueue(["First", "Second", "Third"])
+
+    class StopWhileFirstIsInFlightMessages:
+        """Simulates clicking Stop while "First" is still being scanned - the
+        flag is only checked *between* topics, so First still completes."""
+
+        def create(self, **kwargs):
+            research_queue.request_stop()
+            return make_response([FakeTextBlock("Summary of First.")])
+
+    brain = Brain.__new__(Brain)
+    brain.client = type("C", (), {"messages": StopWhileFirstIsInFlightMessages()})()
+
+    result = brain.run_research_queue()
+
+    assert result["stopped"] is True
+    assert [p["topic"] for p in result["processed"]] == ["First"]
+    pending_topics = [i["topic"] for i in research_queue.list_queue(status="pending")]
+    assert pending_topics == ["Second", "Third"]
