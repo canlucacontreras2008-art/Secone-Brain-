@@ -383,8 +383,8 @@
   }
 
   function radiusFor(node) {
-    const base = node.kind === "task" ? 6 : 7;
-    return Math.min(20, base + Math.sqrt(node.degree || 0) * 2.5);
+    const base = node.kind === "task" ? 3.5 : 4;
+    return Math.min(12, base + Math.sqrt(node.degree || 0) * 1.5);
   }
 
   // Evenly spaced direction on the unit sphere (golden-angle spiral) -
