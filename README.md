@@ -33,16 +33,25 @@ graph, at `/graph`.
 
 ## Memory graph (`/graph`)
 
-A force-directed view of everything the brain knows: gray nodes are facts,
-green nodes are lessons, blue nodes are tasks. Edges are real relationships,
-not a layout guess - a task links to the lesson it produced, and memories
-link to each other when they share a tag. Search filters and highlights
-matching nodes, the legend toggles a kind on/off, and clicking a node opens
-its full content in a side panel.
+A 3D view of everything the brain knows: memories float in orbit around a
+big blue globe. Lessons are green, tasks are blue; facts are colored by
+"branch" - the connected component they belong to (computed from real
+relationships: a task links to the lesson it produced, and memories link
+when they share a tag) - so each topic cluster settles into its own
+distinct color and, visually, its own patch of sky around the globe.
 
-It's a single self-contained page (`app/static/graph.html`) with a small
-hand-rolled force simulation - no D3 or other JS dependency, so the feature
-works offline and has nothing to vendor or build.
+Drag to rotate, scroll to zoom, hover a memory for its label, click one for
+the full detail panel. Search highlights matching memories and dims the
+rest; the legend toggles a kind on/off. Names stay hidden until you hover,
+select, or search for them, so the default view stays a clean, ambient
+scene rather than a wall of text.
+
+It's a single self-contained page (`app/static/graph.html`) - a hand-rolled
+3D projection (rotate, perspective-project, painter's-algorithm depth sort)
+on a plain `<canvas>`, no Three.js/WebGL/D3 or other JS dependency, so the
+feature works offline and has nothing to vendor or build. Layout is
+deterministic (seeded per node ID), so the same data settles into the same
+positions across reloads - only the live auto-rotate animates.
 
 ## Setup
 

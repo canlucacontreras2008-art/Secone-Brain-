@@ -12,12 +12,9 @@
     --text-secondary: #c3c2b7;
     --text-muted: #898781;
     --border: rgba(255, 255, 255, 0.10);
-    --edge: rgba(195, 194, 183, 0.16);
-    --edge-strong: rgba(89, 165, 89, 0.55);
     --fact: #8a8a86;
     --lesson: #5fa83d;
     --task: #3987e5;
-    --accent-ring: #ffffff;
   }
 
   * { box-sizing: border-box; }
@@ -45,6 +42,7 @@
     border-bottom: 1px solid var(--border);
     background: var(--surface);
     flex-wrap: wrap;
+    z-index: 2;
   }
 
   header h1 {
@@ -121,7 +119,7 @@
     overflow: hidden;
   }
 
-  svg {
+  canvas {
     display: block;
     width: 100%;
     height: 100%;
@@ -129,44 +127,7 @@
     background: var(--page);
   }
 
-  svg.panning { cursor: grabbing; }
-
-  .node circle {
-    stroke: rgba(0, 0, 0, 0.5);
-    stroke-width: 1px;
-    cursor: pointer;
-    transition: opacity 120ms ease;
-  }
-
-  .node.selected circle {
-    stroke: var(--accent-ring);
-    stroke-width: 2px;
-  }
-
-  .node text {
-    fill: var(--text-secondary);
-    font-size: 9px;
-    pointer-events: none;
-    paint-order: stroke;
-    stroke: var(--page);
-    stroke-width: 3px;
-    opacity: 0;
-    transition: opacity 100ms ease;
-  }
-
-  .node:hover text,
-  .node.selected text,
-  .node.match text {
-    opacity: 1;
-  }
-
-  .node.dim circle { opacity: 0.15; }
-  .node.dim text { opacity: 0 !important; }
-  .node.match circle { stroke: #ffd23f; stroke-width: 2px; }
-
-  .edge { stroke: var(--edge); stroke-width: 1px; fill: none; }
-  .edge.produced { stroke: var(--edge-strong); stroke-width: 1.4px; }
-  .edge.dim { opacity: 0.06; }
+  canvas.dragging { cursor: grabbing; }
 
   #tooltip {
     position: absolute;
@@ -203,6 +164,7 @@
     overflow-y: auto;
     transform: translateX(100%);
     transition: transform 160ms ease;
+    z-index: 5;
   }
 
   #panel.open { transform: translateX(0); }
@@ -275,7 +237,9 @@
 
   #empty-state {
     position: absolute;
-    inset: 0;
+    left: 0;
+    right: 0;
+    bottom: 24px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -285,6 +249,8 @@
     font-size: 13px;
     text-align: center;
     padding: 24px;
+    pointer-events: none;
+    z-index: 3;
   }
 
   #empty-state code {
@@ -293,6 +259,18 @@
     border-radius: 4px;
     padding: 2px 6px;
     color: var(--text-secondary);
+    pointer-events: auto;
+    user-select: all;
+  }
+
+  #hint {
+    position: absolute;
+    left: 18px;
+    bottom: 14px;
+    font-size: 11px;
+    color: var(--text-muted);
+    z-index: 3;
+    pointer-events: none;
   }
 
   .hidden { display: none !important; }
@@ -311,12 +289,7 @@
     <div id="stats"></div>
   </header>
   <main>
-    <svg id="graph">
-      <g id="viewport">
-        <g id="edges"></g>
-        <g id="nodes"></g>
-      </g>
-    </svg>
+    <canvas id="scene"></canvas>
     <div id="tooltip" class="hidden"></div>
     <aside id="panel">
       <button id="panel-close">&times;</button>
@@ -328,6 +301,7 @@
         or seed one now: <code>curl -X POST /memory -d '{"kind":"fact","content":"hello","tags":["demo"]}' -H 'content-type: application/json'</code>
       </div>
     </div>
+    <div id="hint">Drag to rotate &middot; scroll to zoom &middot; click a memory for details</div>
   </main>
 </div>
 
@@ -335,251 +309,407 @@
 (function () {
   "use strict";
 
-  const svg = document.getElementById("graph");
-  const viewport = document.getElementById("viewport");
-  const edgesLayer = document.getElementById("edges");
-  const nodesLayer = document.getElementById("nodes");
+  const canvas = document.getElementById("scene");
+  const ctx = canvas.getContext("2d");
   const tooltip = document.getElementById("tooltip");
   const panel = document.getElementById("panel");
   const panelContent = document.getElementById("panel-content");
   const statsEl = document.getElementById("stats");
   const searchEl = document.getElementById("search");
   const emptyState = document.getElementById("empty-state");
-  const SVG_NS = "http://www.w3.org/2000/svg";
 
   const COLORS = { fact: "#8a8a86", lesson: "#5fa83d", task: "#3987e5" };
   // Cycled per connected component ("branch") to color same-branch facts
-  // alike - a validated categorical set, distinct from the lesson/task hues
-  // above so kind and branch never look like the same signal.
+  // alike - distinct from the lesson/task hues above so kind and branch
+  // never look like the same signal.
   const BRANCH_COLORS = ["#d95926", "#199e70", "#c98500", "#d55181", "#9085e9", "#e66767"];
   const hiddenKinds = new Set();
 
   function colorFor(node) {
-    // Only facts get branch coloring - lessons/tasks keep their fixed kind
-    // color so that encoding stays legible regardless of which branch they're in.
     if (node.kind === "fact" && node.branch != null) {
       return BRANCH_COLORS[node.branch % BRANCH_COLORS.length];
     }
     return COLORS[node.kind] || COLORS.fact;
   }
 
-  let width = 0, height = 0;
-  let transform = { x: 0, y: 0, k: 1 };
+  // --- scene constants ---
+  const GLOBE_RADIUS = 120;
+  const ORBIT_MIN = 175;
+  const ORBIT_JITTER = 55;
+  const CLUSTER_SPREAD = 0.32; // radians - how tightly a branch clusters around its direction
+  const CAMERA_DISTANCE = 900;
+
+  let width = 0, height = 0, dpr = 1;
   let nodes = [];
   let edges = [];
   let byId = new Map();
   let selectedId = null;
-  let alpha = 1;
-  let animating = false;
-  let userInteracted = false;
+  let hoveredId = null;
+  let searchQuery = "";
+  let lastProjected = []; // refreshed every frame, used for hit-testing
+
+  const rotation = { yaw: 0.4, pitch: -0.25 };
+  let zoom = 1;
+  let autoRotate = true;
 
   function resize() {
-    const rect = svg.getBoundingClientRect();
+    const rect = canvas.getBoundingClientRect();
     width = rect.width;
     height = rect.height;
+    dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
   window.addEventListener("resize", resize);
   resize();
 
+  // --- deterministic per-node randomness (stable layout across reloads) ---
+  function hashStr(s) {
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  }
+  function mulberry32(seed) {
+    return function () {
+      seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
   function radiusFor(node) {
-    const base = node.kind === "task" ? 5 : 6;
-    return Math.min(26, base + Math.sqrt(node.degree || 0) * 3);
+    const base = node.kind === "task" ? 6 : 7;
+    return Math.min(20, base + Math.sqrt(node.degree || 0) * 2.5);
   }
 
-  function applyTransform() {
-    viewport.setAttribute(
-      "transform",
-      `translate(${transform.x},${transform.y}) scale(${transform.k})`
-    );
+  // Evenly spaced direction on the unit sphere (golden-angle spiral) -
+  // used both for whole branches and for lone/unclustered nodes.
+  function fibonacciDirection(i, total) {
+    const y = total > 1 ? 1 - (i / (total - 1)) * 2 : 0;
+    const r = Math.sqrt(Math.max(0, 1 - y * y));
+    const theta = Math.PI * (3 - Math.sqrt(5)) * i;
+    return { x: Math.cos(theta) * r, y, z: Math.sin(theta) * r };
   }
 
-  // Keeps the graph framed while the simulation is still spreading nodes out.
-  // Stops the moment the viewer takes control (zoom/pan/drag), so it never
-  // fights their navigation.
-  function fitToView() {
-    if (!nodes.length) return;
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const n of nodes) {
-      const r = radiusFor(n);
-      minX = Math.min(minX, n.x - r);
-      minY = Math.min(minY, n.y - r);
-      maxX = Math.max(maxX, n.x + r);
-      maxY = Math.max(maxY, n.y + r);
-    }
-    const graphW = Math.max(1, maxX - minX);
-    const graphH = Math.max(1, maxY - minY);
-    const padding = 70;
-    const k = Math.max(
-      0.15,
-      Math.min(2, (width - padding * 2) / graphW, (height - padding * 2) / graphH)
-    );
-    transform.k = k;
-    transform.x = width / 2 - ((minX + maxX) / 2) * k;
-    transform.y = height / 2 - ((minY + maxY) / 2) * k;
-    applyTransform();
-  }
-
-  // --- zoom & pan (hand-rolled, no dependency on d3-zoom) ---
-  svg.addEventListener("wheel", (event) => {
-    event.preventDefault();
-    userInteracted = true;
-    const rect = svg.getBoundingClientRect();
-    const mx = event.clientX - rect.left;
-    const my = event.clientY - rect.top;
-    const factor = Math.exp(-event.deltaY * 0.0015);
-    const newK = Math.min(4, Math.max(0.15, transform.k * factor));
-    const scale = newK / transform.k;
-    transform.x = mx - (mx - transform.x) * scale;
-    transform.y = my - (my - transform.y) * scale;
-    transform.k = newK;
-    applyTransform();
-  }, { passive: false });
-
-  let panState = null;
-  svg.addEventListener("pointerdown", (event) => {
-    if (event.target.closest(".node")) return;
-    userInteracted = true;
-    panState = { startX: event.clientX, startY: event.clientY, ox: transform.x, oy: transform.y };
-    svg.classList.add("panning");
-    svg.setPointerCapture(event.pointerId);
-  });
-  svg.addEventListener("pointermove", (event) => {
-    if (!panState) return;
-    transform.x = panState.ox + (event.clientX - panState.startX);
-    transform.y = panState.oy + (event.clientY - panState.startY);
-    applyTransform();
-  });
-  svg.addEventListener("pointerup", () => {
-    panState = null;
-    svg.classList.remove("panning");
-  });
-
-  // --- force simulation: manual, O(n^2) repulsion + spring edges + centering ---
-  const REPEL = 9000;
-  const REPEL_RANGE_SQ = 260000; // ~510px - lets disconnected clusters push apart
-  const MIN_DIST_SQ = 100; // 10px floor - prevents a 1/distSq singularity
-  const MAX_SPEED = 45; // px/frame - bounds how far one tick can fling a node
-  const SPRING_LEN = 100;
-  const SPRING_K = 0.03;
-  const CENTER_K = 0.003;
-  const DAMPING = 0.85;
-
-  function tick() {
-    const visible = nodes.filter((n) => !hiddenKinds.has(n.kind));
-
-    for (let i = 0; i < visible.length; i++) {
-      const a = visible[i];
-      if (a.fx != null) continue;
-      let fx = (width / 2 - a.x) * CENTER_K;
-      let fy = (height / 2 - a.y) * CENTER_K;
-      for (let j = 0; j < visible.length; j++) {
-        if (i === j) continue;
-        const b = visible[j];
-        let dx = a.x - b.x, dy = a.y - b.y;
-        let distSq = dx * dx + dy * dy || 0.01;
-        if (distSq > REPEL_RANGE_SQ) continue;
-        // Floor the distance so two nodes spawning near-coincident don't
-        // divide by ~0 and detonate the simulation on the first tick.
-        distSq = Math.max(distSq, MIN_DIST_SQ);
-        const dist = Math.sqrt(distSq);
-        const force = REPEL / distSq;
-        fx += (dx / dist) * force;
-        fy += (dy / dist) * force;
+  // --- lay memories out around the globe: same branch -> same neighborhood ---
+  function assignPositions(allNodes) {
+    const byBranch = new Map();
+    const loose = [];
+    for (const n of allNodes) {
+      if (n.branch != null) {
+        if (!byBranch.has(n.branch)) byBranch.set(n.branch, []);
+        byBranch.get(n.branch).push(n);
+      } else {
+        loose.push(n);
       }
-      a.ax = fx;
-      a.ay = fy;
     }
 
-    for (const e of edges) {
-      if (hiddenKinds.has(e.a.kind) || hiddenKinds.has(e.b.kind)) continue;
-      let dx = e.b.x - e.a.x, dy = e.b.y - e.a.y;
-      const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
-      const stretch = dist - SPRING_LEN;
-      const force = stretch * SPRING_K;
-      const fx = (dx / dist) * force, fy = (dy / dist) * force;
-      if (e.a.fx == null) { e.a.ax += fx; e.a.ay += fy; }
-      if (e.b.fx == null) { e.b.ax -= fx; e.b.ay -= fy; }
-    }
+    const branchIds = Array.from(byBranch.keys());
+    const totalDirections = Math.max(1, branchIds.length + loose.length);
+    let dirIndex = 0;
 
-    let moving = 0;
-    for (const n of visible) {
-      if (n.fx != null) { n.x = n.fx; n.y = n.fy; continue; }
-      n.vx = (n.vx + n.ax) * DAMPING;
-      n.vy = (n.vy + n.ay) * DAMPING;
-      const speed = Math.hypot(n.vx, n.vy);
-      if (speed > MAX_SPEED) {
-        n.vx = (n.vx / speed) * MAX_SPEED;
-        n.vy = (n.vy / speed) * MAX_SPEED;
+    for (const branchId of branchIds) {
+      const dir = fibonacciDirection(dirIndex++, totalDirections);
+      for (const n of byBranch.get(branchId)) {
+        const rng = mulberry32(hashStr(n.id));
+        const jx = dir.x + (rng() - 0.5) * 2 * CLUSTER_SPREAD;
+        const jy = dir.y + (rng() - 0.5) * 2 * CLUSTER_SPREAD;
+        const jz = dir.z + (rng() - 0.5) * 2 * CLUSTER_SPREAD;
+        const len = Math.hypot(jx, jy, jz) || 1;
+        const orbit = ORBIT_MIN + rng() * ORBIT_JITTER;
+        n.x3 = (jx / len) * orbit;
+        n.y3 = (jy / len) * orbit;
+        n.z3 = (jz / len) * orbit;
       }
-      n.x += n.vx;
-      n.y += n.vy;
-      moving += Math.abs(n.vx) + Math.abs(n.vy);
     }
-    return moving;
+    for (const n of loose) {
+      const dir = fibonacciDirection(dirIndex++, totalDirections);
+      const rng = mulberry32(hashStr(n.id));
+      const orbit = ORBIT_MIN + rng() * ORBIT_JITTER;
+      n.x3 = dir.x * orbit;
+      n.y3 = dir.y * orbit;
+      n.z3 = dir.z * orbit;
+    }
+  }
+
+  // --- 3D math: rotate around Y (yaw) then X (pitch), then perspective-project ---
+  function rotatePoint(p) {
+    const cy = Math.cos(rotation.yaw), sy = Math.sin(rotation.yaw);
+    let x = p.x * cy + p.z * sy;
+    let z = -p.x * sy + p.z * cy;
+    const cx = Math.cos(rotation.pitch), sx = Math.sin(rotation.pitch);
+    let y = p.y * cx - z * sx;
+    z = p.y * sx + z * cx;
+    return { x, y, z };
+  }
+
+  function projectRotated(rp) {
+    const scale = (CAMERA_DISTANCE / (CAMERA_DISTANCE + rp.z)) * zoom;
+    return {
+      x: width / 2 + rp.x * scale,
+      y: height / 2 + rp.y * scale,
+      scale,
+      depth: rp.z,
+      behindGlobe: rp.z > 0 && Math.hypot(rp.x, rp.y) < GLOBE_RADIUS,
+    };
+  }
+
+  function project(p3) {
+    return projectRotated(rotatePoint(p3));
+  }
+
+  // --- globe rendering ---
+  function drawGlobe() {
+    const r = GLOBE_RADIUS * zoom;
+    const cx = width / 2, cy = height / 2;
+
+    ctx.save();
+    ctx.shadowColor = "rgba(59, 130, 246, 0.55)";
+    ctx.shadowBlur = 46;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.92, 0, Math.PI * 2);
+    ctx.fillStyle = "#1c4f8f";
+    ctx.fill();
+    ctx.restore();
+
+    const grad = ctx.createRadialGradient(
+      cx - r * 0.35, cy - r * 0.35, r * 0.08,
+      cx, cy, r
+    );
+    grad.addColorStop(0, "#7cb8ee");
+    grad.addColorStop(0.45, "#2f74c4");
+    grad.addColorStop(1, "#0a2c50");
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    drawGraticule(r / GLOBE_RADIUS);
+  }
+
+  function drawGraticule(scale) {
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.16)";
+    ctx.lineWidth = 1;
+    const steps = 48;
+
+    const longitudes = [0, Math.PI / 3, (2 * Math.PI) / 3];
+    for (const phi0 of longitudes) {
+      const path = [];
+      for (let i = 0; i <= steps; i++) {
+        const theta = (i / steps) * Math.PI * 2;
+        const p3 = {
+          x: GLOBE_RADIUS * Math.sin(theta) * Math.cos(phi0),
+          y: GLOBE_RADIUS * Math.cos(theta),
+          z: GLOBE_RADIUS * Math.sin(theta) * Math.sin(phi0),
+        };
+        const rp = rotatePoint(p3);
+        const pr = projectRotated(rp);
+        path.push({ visible: rp.z <= 0, x: pr.x, y: pr.y });
+      }
+      strokePath(path);
+    }
+
+    const latitudes = [Math.PI / 4, Math.PI / 2, (3 * Math.PI) / 4];
+    for (const theta0 of latitudes) {
+      const path = [];
+      for (let i = 0; i <= steps; i++) {
+        const phi = (i / steps) * Math.PI * 2;
+        const p3 = {
+          x: GLOBE_RADIUS * Math.sin(theta0) * Math.cos(phi),
+          y: GLOBE_RADIUS * Math.cos(theta0),
+          z: GLOBE_RADIUS * Math.sin(theta0) * Math.sin(phi),
+        };
+        const rp = rotatePoint(p3);
+        const pr = projectRotated(rp);
+        path.push({ visible: rp.z <= 0, x: pr.x, y: pr.y });
+      }
+      strokePath(path);
+    }
+  }
+
+  function strokePath(path) {
+    ctx.beginPath();
+    let started = false;
+    for (const pt of path) {
+      if (!pt.visible) { started = false; continue; }
+      if (!started) { ctx.moveTo(pt.x, pt.y); started = true; }
+      else ctx.lineTo(pt.x, pt.y);
+    }
+    ctx.stroke();
+  }
+
+  // --- node/edge rendering ---
+  function haystackOf(n) {
+    return (n.label + " " + n.detail + " " + n.tags.join(" ")).toLowerCase();
+  }
+
+  function drawEdge(a, b, kind) {
+    const pa = project({ x: a.x3, y: a.y3, z: a.z3 });
+    const pb = project({ x: b.x3, y: b.y3, z: b.z3 });
+    let alpha = kind === "produced" ? 0.5 : 0.18;
+    if (pa.behindGlobe || pb.behindGlobe) alpha *= 0.25;
+    if (hiddenKinds.has(a.kind) || hiddenKinds.has(b.kind)) return;
+    ctx.strokeStyle = kind === "produced"
+      ? `rgba(89, 165, 89, ${alpha})`
+      : `rgba(195, 194, 183, ${alpha})`;
+    ctx.lineWidth = kind === "produced" ? 1.4 : 1;
+    ctx.beginPath();
+    ctx.moveTo(pa.x, pa.y);
+    ctx.lineTo(pb.x, pb.y);
+    ctx.stroke();
+  }
+
+  function drawNode(n, p) {
+    const r = radiusFor(n) * p.scale;
+    const isHovered = n.id === hoveredId;
+    const isSelected = n.id === selectedId;
+    const isMatch = searchQuery && haystackOf(n).includes(searchQuery);
+    const isDim = searchQuery && !isMatch;
+
+    let alpha = 1;
+    if (p.behindGlobe) alpha *= 0.16;
+    if (isDim) alpha *= 0.12;
+
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, Math.max(1.5, r), 0, Math.PI * 2);
+    ctx.fillStyle = colorFor(n);
+    ctx.fill();
+
+    if (isSelected || (isMatch && !p.behindGlobe)) {
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = isSelected ? "#ffffff" : "#ffd23f";
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    if ((isHovered || isSelected || isMatch) && !p.behindGlobe) {
+      const label = n.label.length > 40 ? n.label.slice(0, 39) + "…" : n.label;
+      ctx.font = "11px system-ui, -apple-system, sans-serif";
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(13, 13, 13, 0.9)";
+      ctx.fillStyle = "#c3c2b7";
+      ctx.textBaseline = "middle";
+      const tx = p.x + r + 6;
+      ctx.strokeText(label, tx, p.y);
+      ctx.fillText(label, tx, p.y);
+    }
   }
 
   function render() {
-    for (const n of nodes) {
-      if (!n.el) continue;
-      n.el.setAttribute("transform", `translate(${n.x},${n.y})`);
+    ctx.clearRect(0, 0, width, height);
+    drawGlobe();
+
+    const visibleEdges = edges.filter(
+      (e) => !hiddenKinds.has(e.a.kind) && !hiddenKinds.has(e.b.kind)
+    );
+    const visibleNodes = nodes.filter((n) => !hiddenKinds.has(n.kind));
+
+    const projectedNodes = visibleNodes.map((n) => ({ n, p: project({ x: n.x3, y: n.y3, z: n.z3 }) }));
+
+    const drawables = [];
+    for (const e of visibleEdges) {
+      const da = rotatePoint({ x: e.a.x3, y: e.a.y3, z: e.a.z3 }).z;
+      const db = rotatePoint({ x: e.b.x3, y: e.b.y3, z: e.b.z3 }).z;
+      drawables.push({ type: "edge", depth: (da + db) / 2, e });
     }
-    for (const e of edges) {
-      if (!e.el) continue;
-      e.el.setAttribute("x1", e.a.x);
-      e.el.setAttribute("y1", e.a.y);
-      e.el.setAttribute("x2", e.b.x);
-      e.el.setAttribute("y2", e.b.y);
+    for (const pn of projectedNodes) {
+      drawables.push({ type: "node", depth: pn.p.depth, pn });
     }
+    drawables.sort((a, b) => b.depth - a.depth); // far first (painter's algorithm)
+
+    for (const d of drawables) {
+      if (d.type === "edge") drawEdge(d.e.a, d.e.b, d.e.kind);
+      else drawNode(d.pn.n, d.pn.p);
+    }
+
+    lastProjected = projectedNodes;
   }
 
   function loop() {
-    const moving = tick();
-    if (!userInteracted) fitToView();
+    if (autoRotate) rotation.yaw += 0.0016;
     render();
-    if (moving > 0.15 || dragNode) {
-      requestAnimationFrame(loop);
+    requestAnimationFrame(loop);
+  }
+
+  // --- drag to rotate / wheel to zoom (hand-rolled, no 3D library) ---
+  let dragState = null;
+  canvas.addEventListener("pointerdown", (event) => {
+    dragState = { x: event.clientX, y: event.clientY, moved: false };
+    autoRotate = false;
+    canvas.classList.add("dragging");
+    canvas.setPointerCapture(event.pointerId);
+  });
+  canvas.addEventListener("pointermove", (event) => {
+    if (dragState) {
+      const dx = event.clientX - dragState.x;
+      const dy = event.clientY - dragState.y;
+      if (Math.abs(dx) + Math.abs(dy) > 3) dragState.moved = true;
+      rotation.yaw += dx * 0.006;
+      rotation.pitch = Math.max(-1.45, Math.min(1.45, rotation.pitch + dy * 0.006));
+      dragState.x = event.clientX;
+      dragState.y = event.clientY;
+      return;
+    }
+    handleHover(event);
+  });
+  canvas.addEventListener("pointerup", (event) => {
+    canvas.classList.remove("dragging");
+    if (dragState && !dragState.moved) {
+      handleClick(event);
+    }
+    dragState = null;
+  });
+  canvas.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    zoom = Math.max(0.5, Math.min(2.5, zoom * Math.exp(-event.deltaY * 0.001)));
+  }, { passive: false });
+
+  function nearestNodeAt(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const mx = clientX - rect.left, my = clientY - rect.top;
+    let best = null, bestDist = Infinity;
+    for (const { n, p } of lastProjected) {
+      if (p.behindGlobe) continue;
+      const r = Math.max(6, radiusFor(n) * p.scale);
+      const d = Math.hypot(p.x - mx, p.y - my);
+      if (d <= r && d < bestDist) {
+        best = n;
+        bestDist = d;
+      }
+    }
+    return best;
+  }
+
+  function handleHover(event) {
+    const n = nearestNodeAt(event.clientX, event.clientY);
+    hoveredId = n ? n.id : null;
+    if (n) {
+      const rect = canvas.getBoundingClientRect();
+      tooltip.classList.remove("hidden");
+      tooltip.innerHTML = `<span class="kind">${n.kind}</span>${escapeHtml(n.label)}`;
+      tooltip.style.left = event.clientX - rect.left + 14 + "px";
+      tooltip.style.top = event.clientY - rect.top + 14 + "px";
+      canvas.style.cursor = "pointer";
     } else {
-      animating = false;
+      tooltip.classList.add("hidden");
+      canvas.style.cursor = "grab";
     }
   }
 
-  function reheat() {
-    if (!animating) {
-      animating = true;
-      requestAnimationFrame(loop);
-    }
-  }
-
-  // --- drag ---
-  let dragNode = null;
-  function startDrag(node, event) {
-    dragNode = node;
-    userInteracted = true;
-    const rect = svg.getBoundingClientRect();
-    const move = (ev) => {
-      const gx = (ev.clientX - rect.left - transform.x) / transform.k;
-      const gy = (ev.clientY - rect.top - transform.y) / transform.k;
-      node.fx = gx;
-      node.fy = gy;
-      reheat();
-    };
-    const up = () => {
-      node.fx = null;
-      node.fy = null;
-      dragNode = null;
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+  function handleClick(event) {
+    const n = nearestNodeAt(event.clientX, event.clientY);
+    if (n) openPanel(n);
   }
 
   // --- selection / panel ---
   function openPanel(node) {
     selectedId = node.id;
-    for (const n of nodes) {
-      if (n.el) n.el.classList.toggle("selected", n.id === selectedId);
-    }
     const tagsHtml = node.tags.length
       ? node.tags.map((t) => `<span class="tag-chip">${escapeHtml(t)}</span>`).join("")
       : '<span class="field-value">&mdash;</span>';
@@ -613,7 +743,6 @@
   document.getElementById("panel-close").addEventListener("click", () => {
     panel.classList.remove("open");
     selectedId = null;
-    for (const n of nodes) if (n.el) n.el.classList.remove("selected");
   });
 
   function escapeHtml(str) {
@@ -624,18 +753,7 @@
 
   // --- search ---
   searchEl.addEventListener("input", () => {
-    const q = searchEl.value.trim().toLowerCase();
-    for (const n of nodes) {
-      if (!n.el) continue;
-      if (!q) {
-        n.el.classList.remove("dim", "match");
-        continue;
-      }
-      const haystack = (n.label + " " + n.detail + " " + n.tags.join(" ")).toLowerCase();
-      const hit = haystack.includes(q);
-      n.el.classList.toggle("match", hit);
-      n.el.classList.toggle("dim", !hit);
-    }
+    searchQuery = searchEl.value.trim().toLowerCase();
   });
 
   // --- legend toggles ---
@@ -649,81 +767,23 @@
         hiddenKinds.add(kind);
         btn.classList.add("off");
       }
-      for (const n of nodes) {
-        if (n.el) n.el.classList.toggle("hidden", hiddenKinds.has(n.kind));
-      }
-      for (const e of edges) {
-        if (e.el) {
-          e.el.classList.toggle("hidden", hiddenKinds.has(e.a.kind) || hiddenKinds.has(e.b.kind));
-        }
-      }
-      reheat();
     });
   });
 
   // --- build ---
   function buildGraph(data) {
-    const spread = Math.min(width, height) * 0.5 + data.nodes.length * 2;
-    nodes = data.nodes.map((n) => ({
-      ...n,
-      x: width / 2 + (Math.random() - 0.5) * spread,
-      y: height / 2 + (Math.random() - 0.5) * spread,
-      vx: 0, vy: 0, ax: 0, ay: 0,
-      fx: null, fy: null,
-    }));
+    nodes = data.nodes.map((n) => ({ ...n }));
     byId = new Map(nodes.map((n) => [n.id, n]));
     edges = data.edges
       .map((e) => ({ ...e, a: byId.get(e.source), b: byId.get(e.target) }))
       .filter((e) => e.a && e.b);
 
+    assignPositions(nodes);
+
     statsEl.textContent = `${nodes.length} memories · ${edges.length} connections`;
     emptyState.classList.toggle("hidden", nodes.length > 0);
 
-    edgesLayer.innerHTML = "";
-    for (const e of edges) {
-      const line = document.createElementNS(SVG_NS, "line");
-      line.setAttribute("class", "edge" + (e.kind === "produced" ? " produced" : ""));
-      edgesLayer.appendChild(line);
-      e.el = line;
-    }
-
-    nodesLayer.innerHTML = "";
-    for (const n of nodes) {
-      const g = document.createElementNS(SVG_NS, "g");
-      g.setAttribute("class", "node");
-
-      const circle = document.createElementNS(SVG_NS, "circle");
-      circle.setAttribute("r", radiusFor(n));
-      circle.setAttribute("fill", colorFor(n));
-      g.appendChild(circle);
-
-      const label = document.createElementNS(SVG_NS, "text");
-      label.textContent = n.label.length > 28 ? n.label.slice(0, 27) + "…" : n.label;
-      label.setAttribute("x", radiusFor(n) + 4);
-      label.setAttribute("y", 3);
-      g.appendChild(label);
-
-      g.addEventListener("pointerenter", (event) => {
-        tooltip.classList.remove("hidden");
-        tooltip.innerHTML = `<span class="kind">${n.kind}</span>${escapeHtml(n.label)}`;
-      });
-      g.addEventListener("pointermove", (event) => {
-        const rect = svg.getBoundingClientRect();
-        tooltip.style.left = event.clientX - rect.left + 14 + "px";
-        tooltip.style.top = event.clientY - rect.top + 14 + "px";
-      });
-      g.addEventListener("pointerleave", () => tooltip.classList.add("hidden"));
-      g.addEventListener("pointerdown", (event) => {
-        event.stopPropagation();
-        startDrag(n, event);
-      });
-      g.addEventListener("click", () => openPanel(n));
-
-      nodesLayer.appendChild(g);
-      n.el = g;
-    }
-
-    reheat();
+    requestAnimationFrame(loop);
   }
 
   fetch("/graph/data")
@@ -732,6 +792,7 @@
     .catch((err) => {
       emptyState.classList.remove("hidden");
       emptyState.innerHTML = `<div>Couldn't load the graph: ${escapeHtml(err.message)}</div>`;
+      requestAnimationFrame(loop); // still render the empty globe
     });
 })();
 </script>
