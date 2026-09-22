@@ -36,11 +36,13 @@ class Brain:
         messages: list,
         extra_system: str = "",
         tool_list: Optional[list] = None,
+        max_iterations: Optional[int] = None,
     ) -> str:
         system = SYSTEM_PROMPT + (f"\n\n{extra_system}" if extra_system else "")
         active_tools = tools.ALL_TOOLS if tool_list is None else tool_list
+        iterations = config.MAX_TOOL_ITERATIONS if max_iterations is None else max_iterations
 
-        for _ in range(config.MAX_TOOL_ITERATIONS):
+        for _ in range(iterations):
             response = self.client.messages.create(
                 model=config.MODEL,
                 max_tokens=4096,
@@ -188,6 +190,12 @@ class Brain:
             summary = self._run_loop(
                 [{"role": "user", "content": prompt}],
                 tool_list=tools.WIKIPEDIA_TOOLS,
+                # A full article can need search + fetch + ~15 individual
+                # `remember` calls - the default iteration cap (tuned for
+                # chat/task turns) cuts a thorough scan off before it can
+                # give a closing summary, even though the facts up to that
+                # point are still saved.
+                max_iterations=20,
             )
             scanned.append({"topic": topic, "summary": summary})
 
