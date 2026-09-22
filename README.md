@@ -69,6 +69,13 @@ rest; the legend toggles a kind on/off. Names stay hidden until you hover,
 select, or search for them, so the default view stays a clean, ambient
 scene rather than a wall of text.
 
+If you've queued anything via `/queue`, the page also polls `GET /queue`
+every few seconds and shows a learning progress bar along the bottom
+(`done/total learned`, plus a failed count if any) and a live queue list in
+the top-right corner (a colored dot per item - gray pending, pulsing amber
+running, green done, red error). Both stay hidden entirely if the queue has
+never been used; the queue list has its own close button per session.
+
 It's a single self-contained page (`app/static/graph.html`) - a hand-rolled
 3D projection (rotate, perspective-project, painter's-algorithm depth sort)
 on a plain `<canvas>`, no Three.js/WebGL/D3 or other JS dependency, so the
