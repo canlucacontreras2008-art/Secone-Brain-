@@ -39,15 +39,18 @@ graph, at `/graph`.
 
 ## Memory graph (`/graph`)
 
-A 3D view of everything the brain knows: memories float in orbit around a
-glowing golden holographic core - a dense wireframe sphere (layered
+A 3D view of everything the brain knows, as a small solar system: a glowing
+golden holographic core in the center - a dense wireframe sphere (layered
 latitude/longitude lines, scattered short "circuit trace" arcs, twinkling
-points, a couple of tilted frame rings) rather than a plain ball. Lessons
-are green, tasks are blue; facts are colored by "branch" - the connected
-component they belong to (computed from real relationships: a task links
-to the lesson it produced, and memories link when they share a tag) - so
-each topic cluster settles into its own distinct color and, visually, its
-own patch of sky around the globe.
+points, a couple of tilted frame rings) rather than a plain ball - orbited
+by one small "topic globe" per branch (the connected component a group of
+memories belongs to, computed from real relationships: a task links to the
+lesson it produced, and memories link when they share a tag), each tinted
+in that branch's color. That branch's own memories then orbit *their*
+topic globe rather than the main one - a hierarchy, not a flat shell -
+and every level of it drifts continuously on its own, independent of
+camera control. Lessons are green and tasks are blue at every level;
+facts pick up their branch's color.
 
 Drag to rotate, scroll to zoom, hover a memory for its label, click one for
 the full detail panel. Search highlights matching memories and dims the

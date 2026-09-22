@@ -323,6 +323,16 @@
   // alike - distinct from the lesson/task hues above so kind and branch
   // never look like the same signal.
   const BRANCH_COLORS = ["#d95926", "#199e70", "#c98500", "#d55181", "#9085e9", "#e66767"];
+  // Matching gradient/glow stops per branch hue - each topic mini-globe is a
+  // small tinted echo of the main golden globe's own gradient treatment.
+  const BRANCH_GLOBE_STYLES = [
+    { light: "rgba(255, 194, 148, 0.92)", dark: "rgba(90, 35, 12, 0.2)", glow: "rgba(255, 140, 80, 0.55)" },
+    { light: "rgba(150, 240, 205, 0.92)", dark: "rgba(8, 60, 42, 0.2)", glow: "rgba(60, 220, 170, 0.5)" },
+    { light: "rgba(255, 223, 158, 0.92)", dark: "rgba(80, 52, 0, 0.2)", glow: "rgba(255, 190, 80, 0.5)" },
+    { light: "rgba(255, 195, 213, 0.92)", dark: "rgba(85, 30, 50, 0.2)", glow: "rgba(255, 130, 170, 0.5)" },
+    { light: "rgba(214, 204, 255, 0.92)", dark: "rgba(50, 45, 90, 0.2)", glow: "rgba(160, 140, 255, 0.5)" },
+    { light: "rgba(255, 195, 195, 0.92)", dark: "rgba(90, 30, 30, 0.2)", glow: "rgba(255, 130, 130, 0.5)" },
+  ];
   const hiddenKinds = new Set();
 
   function colorFor(node) {
@@ -334,13 +344,19 @@
 
   // --- scene constants ---
   const GLOBE_RADIUS = 120;
-  const ORBIT_MIN = 145;
-  const ORBIT_JITTER = 25;
-  const CAMERA_DISTANCE = 900;
+  // Loose (unbranched) memories orbit the main globe directly, close in.
+  const LOOSE_ORBIT_MIN = 145;
+  const LOOSE_ORBIT_JITTER = 25;
+  // Each branch becomes its own small "topic globe" orbiting further out;
+  // its members then orbit *that* mini-globe instead of the main one.
+  const TOPIC_ORBIT_MIN = 230;
+  const TOPIC_ORBIT_JITTER = 55;
+  const CAMERA_DISTANCE = 1100;
 
   let width = 0, height = 0, dpr = 1;
   let nodes = [];
   let edges = [];
+  let topicGlobes = [];
   let byId = new Map();
   let selectedId = null;
   let hoveredId = null;
@@ -386,9 +402,20 @@
     return Math.min(12, base + Math.sqrt(node.degree || 0) * 1.5);
   }
 
-  // --- lay memories out on a grid around the globe, each with its own slow
-  // orbit - same branch -> adjacent cells, packed tighter than one grid
-  // point per memory so they read as a dense, coherent shell.
+  // Evenly spaced direction on the unit sphere (golden-angle spiral).
+  function fibonacciDirection(i, total) {
+    const y = total > 1 ? 1 - (i / (total - 1)) * 2 : 0;
+    const r = Math.sqrt(Math.max(0, 1 - y * y));
+    const theta = Math.PI * (3 - Math.sqrt(5)) * i;
+    return { x: Math.cos(theta) * r, y, z: Math.sin(theta) * r };
+  }
+  function directionToThetaPhi(dir) {
+    return { theta: Math.acos(Math.max(-1, Math.min(1, dir.y))), phi: Math.atan2(dir.z, dir.x) };
+  }
+
+  // --- lay the scene out as a small hierarchy: each branch becomes its own
+  // mini "topic globe" orbiting the main one, and that branch's memories
+  // orbit their mini-globe in turn - not all flat around the main globe.
   function assignPositions(allNodes) {
     const byBranch = new Map();
     const loose = [];
@@ -400,38 +427,73 @@
         loose.push(n);
       }
     }
-    const ordered = [];
-    for (const members of byBranch.values()) ordered.push(...members);
-    ordered.push(...loose);
 
-    const count = Math.max(1, ordered.length);
-    // A smaller multiplier than "one cell per node" packs memories closer
-    // together on the sphere surface (cells get reused, several memories
-    // per latitude/longitude neighborhood) instead of spreading them out
-    // to fill the whole globe evenly.
-    const cols = Math.max(5, Math.ceil(Math.sqrt(count * 1.1)));
-    const rows = Math.max(3, Math.ceil(count / cols));
+    const branchIds = Array.from(byBranch.keys()).sort((a, b) => a - b);
+    topicGlobes = branchIds.map((branchId, idx) => {
+      const members = byBranch.get(branchId);
+      const rng = mulberry32(hashStr("topic-" + branchId));
+      const { theta, phi } = directionToThetaPhi(fibonacciDirection(idx, branchIds.length));
+      return {
+        id: branchId,
+        color: BRANCH_COLORS[branchId % BRANCH_COLORS.length],
+        style: BRANCH_GLOBE_STYLES[branchId % BRANCH_GLOBE_STYLES.length],
+        radius: Math.min(40, 18 + Math.sqrt(members.length) * 5),
+        orbitTheta: theta,
+        orbitPhi0: phi,
+        orbitRadius: TOPIC_ORBIT_MIN + rng() * TOPIC_ORBIT_JITTER,
+        // Slower than an individual memory's local orbit - the whole
+        // structure drifts around the main globe at a stately pace.
+        orbitSpeed: (rng() - 0.5) * 0.02,
+        members,
+        cx: 0, cy: 0, cz: 0,
+      };
+    });
 
-    ordered.forEach((node, i) => {
-      const row = Math.floor(i / cols) % rows;
-      const col = i % cols;
+    for (const g of topicGlobes) {
+      g.members.forEach((node, i) => {
+        const rng = mulberry32(hashStr(node.id));
+        const { theta, phi } = directionToThetaPhi(fibonacciDirection(i, g.members.length));
+        node.topicGlobe = g;
+        node.localTheta = theta;
+        node.localPhi0 = phi;
+        node.localRadius = g.radius * (1.3 + rng() * 0.4);
+        // Faster than the topic globe's own orbit - memories visibly buzz
+        // around their mini-globe while it slowly carries them around the main one.
+        node.localSpeed = (rng() - 0.5) * 0.16;
+      });
+    }
+
+    loose.forEach((node, i) => {
       const rng = mulberry32(hashStr(node.id));
-      node.orbitTheta = ((row + 1) / (rows + 1)) * Math.PI;
-      node.orbitPhi0 = (col / cols) * Math.PI * 2;
-      node.orbitRadius = ORBIT_MIN + rng() * ORBIT_JITTER;
-      // Each memory drifts around the globe's own axis at its own slow,
-      // independently-seeded rate - a living shell, not a rigid block that
-      // only moves when the whole scene is dragged/auto-rotated.
+      const { theta, phi } = directionToThetaPhi(fibonacciDirection(i, loose.length));
+      node.topicGlobe = null;
+      node.orbitTheta = theta;
+      node.orbitPhi0 = phi;
+      node.orbitRadius = LOOSE_ORBIT_MIN + rng() * LOOSE_ORBIT_JITTER;
       node.orbitSpeed = (rng() - 0.5) * 0.05;
     });
   }
 
   function updateOrbits(tSeconds) {
+    for (const g of topicGlobes) {
+      const phi = g.orbitPhi0 + tSeconds * g.orbitSpeed;
+      g.cx = g.orbitRadius * Math.sin(g.orbitTheta) * Math.cos(phi);
+      g.cy = g.orbitRadius * Math.cos(g.orbitTheta);
+      g.cz = g.orbitRadius * Math.sin(g.orbitTheta) * Math.sin(phi);
+    }
     for (const n of nodes) {
-      const phi = n.orbitPhi0 + tSeconds * n.orbitSpeed;
-      n.x3 = n.orbitRadius * Math.sin(n.orbitTheta) * Math.cos(phi);
-      n.y3 = n.orbitRadius * Math.cos(n.orbitTheta);
-      n.z3 = n.orbitRadius * Math.sin(n.orbitTheta) * Math.sin(phi);
+      if (n.topicGlobe) {
+        const g = n.topicGlobe;
+        const phi = n.localPhi0 + tSeconds * n.localSpeed;
+        n.x3 = g.cx + n.localRadius * Math.sin(n.localTheta) * Math.cos(phi);
+        n.y3 = g.cy + n.localRadius * Math.cos(n.localTheta);
+        n.z3 = g.cz + n.localRadius * Math.sin(n.localTheta) * Math.sin(phi);
+      } else {
+        const phi = n.orbitPhi0 + tSeconds * n.orbitSpeed;
+        n.x3 = n.orbitRadius * Math.sin(n.orbitTheta) * Math.cos(phi);
+        n.y3 = n.orbitRadius * Math.cos(n.orbitTheta);
+        n.z3 = n.orbitRadius * Math.sin(n.orbitTheta) * Math.sin(phi);
+      }
     }
   }
 
@@ -722,6 +784,40 @@
     }
   }
 
+  // A small tinted echo of the main globe's gradient/glow treatment, sized
+  // and positioned per branch - "the main topic of the memory" as its own
+  // little world, with that branch's memories orbiting it.
+  function drawTopicGlobe(g, rp, pr) {
+    const behind = rp.z > 0 && Math.hypot(rp.x, rp.y) < GLOBE_RADIUS;
+    const r = g.radius * pr.scale;
+    if (r < 0.5) return;
+
+    ctx.globalAlpha = behind ? 0.15 : 1;
+
+    ctx.save();
+    ctx.shadowColor = g.style.glow;
+    ctx.shadowBlur = 20;
+    ctx.beginPath();
+    ctx.arc(pr.x, pr.y, r * 0.88, 0, Math.PI * 2);
+    ctx.fillStyle = g.color;
+    ctx.fill();
+    ctx.restore();
+
+    const grad = ctx.createRadialGradient(
+      pr.x - r * 0.3, pr.y - r * 0.3, r * 0.05,
+      pr.x, pr.y, r
+    );
+    grad.addColorStop(0, g.style.light);
+    grad.addColorStop(0.55, g.color);
+    grad.addColorStop(1, g.style.dark);
+    ctx.beginPath();
+    ctx.arc(pr.x, pr.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    ctx.globalAlpha = 1;
+  }
+
   function render() {
     ctx.clearRect(0, 0, width, height);
     drawGlobe();
@@ -742,11 +838,17 @@
     for (const pn of projectedNodes) {
       drawables.push({ type: "node", depth: pn.p.depth, pn });
     }
+    for (const g of topicGlobes) {
+      const rp = rotatePoint({ x: g.cx, y: g.cy, z: g.cz });
+      const pr = projectRotated(rp);
+      drawables.push({ type: "topicGlobe", depth: rp.z, g, rp, pr });
+    }
     drawables.sort((a, b) => b.depth - a.depth); // far first (painter's algorithm)
 
     for (const d of drawables) {
       if (d.type === "edge") drawEdge(d.e.a, d.e.b, d.e.kind);
-      else drawNode(d.pn.n, d.pn.p);
+      else if (d.type === "node") drawNode(d.pn.n, d.pn.p);
+      else drawTopicGlobe(d.g, d.rp, d.pr);
     }
 
     lastProjected = projectedNodes;
