@@ -336,7 +336,6 @@
   const GLOBE_RADIUS = 120;
   const ORBIT_MIN = 175;
   const ORBIT_JITTER = 55;
-  const CLUSTER_SPREAD = 0.32; // radians - how tightly a branch clusters around its direction
   const CAMERA_DISTANCE = 900;
 
   let width = 0, height = 0, dpr = 1;
@@ -387,16 +386,25 @@
     return Math.min(12, base + Math.sqrt(node.degree || 0) * 1.5);
   }
 
-  // Evenly spaced direction on the unit sphere (golden-angle spiral) -
-  // used both for whole branches and for lone/unclustered nodes.
-  function fibonacciDirection(i, total) {
-    const y = total > 1 ? 1 - (i / (total - 1)) * 2 : 0;
-    const r = Math.sqrt(Math.max(0, 1 - y * y));
-    const theta = Math.PI * (3 - Math.sqrt(5)) * i;
-    return { x: Math.cos(theta) * r, y, z: Math.sin(theta) * r };
+  // Regular latitude/longitude grid of directions on the unit sphere -
+  // excludes the poles themselves (a full row would collapse to one point).
+  function sphereGrid(rows, cols) {
+    const slots = [];
+    for (let i = 0; i < rows; i++) {
+      const theta = ((i + 1) / (rows + 1)) * Math.PI;
+      for (let j = 0; j < cols; j++) {
+        const phi = (j / cols) * Math.PI * 2;
+        slots.push({
+          x: Math.sin(theta) * Math.cos(phi),
+          y: Math.cos(theta),
+          z: Math.sin(theta) * Math.sin(phi),
+        });
+      }
+    }
+    return slots;
   }
 
-  // --- lay memories out around the globe: same branch -> same neighborhood ---
+  // --- lay memories out in a grid around the globe: same branch -> adjacent cells ---
   function assignPositions(allNodes) {
     const byBranch = new Map();
     const loose = [];
@@ -408,33 +416,23 @@
         loose.push(n);
       }
     }
+    const ordered = [];
+    for (const members of byBranch.values()) ordered.push(...members);
+    ordered.push(...loose);
 
-    const branchIds = Array.from(byBranch.keys());
-    const totalDirections = Math.max(1, branchIds.length + loose.length);
-    let dirIndex = 0;
+    const count = Math.max(1, ordered.length);
+    const cols = Math.max(6, Math.ceil(Math.sqrt(count * 2)));
+    const rows = Math.max(3, Math.ceil(count / cols));
+    const slots = sphereGrid(rows, cols);
 
-    for (const branchId of branchIds) {
-      const dir = fibonacciDirection(dirIndex++, totalDirections);
-      for (const n of byBranch.get(branchId)) {
-        const rng = mulberry32(hashStr(n.id));
-        const jx = dir.x + (rng() - 0.5) * 2 * CLUSTER_SPREAD;
-        const jy = dir.y + (rng() - 0.5) * 2 * CLUSTER_SPREAD;
-        const jz = dir.z + (rng() - 0.5) * 2 * CLUSTER_SPREAD;
-        const len = Math.hypot(jx, jy, jz) || 1;
-        const orbit = ORBIT_MIN + rng() * ORBIT_JITTER;
-        n.x3 = (jx / len) * orbit;
-        n.y3 = (jy / len) * orbit;
-        n.z3 = (jz / len) * orbit;
-      }
-    }
-    for (const n of loose) {
-      const dir = fibonacciDirection(dirIndex++, totalDirections);
-      const rng = mulberry32(hashStr(n.id));
+    ordered.forEach((node, i) => {
+      const dir = slots[i % slots.length];
+      const rng = mulberry32(hashStr(node.id));
       const orbit = ORBIT_MIN + rng() * ORBIT_JITTER;
-      n.x3 = dir.x * orbit;
-      n.y3 = dir.y * orbit;
-      n.z3 = dir.z * orbit;
-    }
+      node.x3 = dir.x * orbit;
+      node.y3 = dir.y * orbit;
+      node.z3 = dir.z * orbit;
+    });
   }
 
   // --- 3D math: rotate around Y (yaw) then X (pitch), then perspective-project ---
