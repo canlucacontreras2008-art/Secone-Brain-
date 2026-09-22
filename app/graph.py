@@ -14,6 +14,13 @@ from . import db
 # graph is still fully populated with nodes and task->lesson edges either way.
 MAX_NODES_FOR_TAG_EDGES = 600
 
+# A tag shared by more than this many memories (e.g. every fact from one
+# Wikipedia scan sharing the article's topic tag) would draw a full clique -
+# n=26 alone is 325 edges, unreadable regardless of layout spacing. Past this
+# size, connect that tag's members in a ring instead: still visually groups
+# them into one cluster, but with O(n) edges instead of O(n^2).
+MAX_CLIQUE_TAG_SIZE = 6
+
 
 def _truncate(text: str, length: int = 80) -> str:
     text = " ".join(text.split())
@@ -67,14 +74,19 @@ def build_graph() -> Dict[str, List[dict]]:
     if len(nodes) <= MAX_NODES_FOR_TAG_EDGES:
         seen_pairs = set()
         for tag, node_ids in tag_index.items():
-            if len(node_ids) < 2:
+            ids = sorted(set(node_ids))
+            if len(ids) < 2:
                 continue
-            for a, b in combinations(sorted(set(node_ids)), 2):
-                pair = (a, b)
+            if len(ids) <= MAX_CLIQUE_TAG_SIZE:
+                pairs = combinations(ids, 2)
+            else:
+                pairs = zip(ids, ids[1:] + ids[:1])
+            for a, b in pairs:
+                pair = tuple(sorted((a, b)))
                 if pair in seen_pairs:
                     continue
                 seen_pairs.add(pair)
-                edges.append({"source": a, "target": b, "kind": "shared-tag", "tag": tag})
+                edges.append({"source": pair[0], "target": pair[1], "kind": "shared-tag", "tag": tag})
 
     for edge in edges:
         nodes[edge["source"]]["degree"] += 1

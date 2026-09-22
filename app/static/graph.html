@@ -443,11 +443,11 @@
   });
 
   // --- force simulation: manual, O(n^2) repulsion + spring edges + centering ---
-  const REPEL = 5200;
+  const REPEL = 9000;
   const REPEL_RANGE_SQ = 260000; // ~510px - lets disconnected clusters push apart
   const MIN_DIST_SQ = 100; // 10px floor - prevents a 1/distSq singularity
   const MAX_SPEED = 45; // px/frame - bounds how far one tick can fling a node
-  const SPRING_LEN = 60;
+  const SPRING_LEN = 100;
   const SPRING_K = 0.03;
   const CENTER_K = 0.003;
   const DAMPING = 0.85;
