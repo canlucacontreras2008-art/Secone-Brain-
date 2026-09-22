@@ -21,6 +21,15 @@ MAX_NODES_FOR_TAG_EDGES = 600
 # them into one cluster, but with O(n) edges instead of O(n^2).
 MAX_CLIQUE_TAG_SIZE = 6
 
+# A tag shared by more memories than this isn't a topical connector at all -
+# it's a source/category marker (e.g. every Wikipedia-scanned fact carries
+# the generic "wikipedia" tag alongside its real topic tag). A ring still
+# fully connects everyone who shares a tag into ONE component regardless of
+# edge count, so a tag this broad would merge every unrelated topic into a
+# single branch. Above this size, skip the tag for edges entirely rather
+# than ring it - real per-topic tags (aim: 8-15 facts) stay well under this.
+MAX_TAG_FANOUT_FOR_EDGES = 20
+
 
 def _truncate(text: str, length: int = 80) -> str:
     text = " ".join(text.split())
@@ -75,7 +84,7 @@ def build_graph() -> Dict[str, List[dict]]:
         seen_pairs = set()
         for tag, node_ids in tag_index.items():
             ids = sorted(set(node_ids))
-            if len(ids) < 2:
+            if len(ids) < 2 or len(ids) > MAX_TAG_FANOUT_FOR_EDGES:
                 continue
             if len(ids) <= MAX_CLIQUE_TAG_SIZE:
                 pairs = combinations(ids, 2)
