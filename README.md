@@ -216,6 +216,38 @@ whose local timezone isn't yours - set it to your own [IANA timezone
 name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) so
 "tomorrow" means tomorrow in *your* timezone, not the server's.
 
+## Auto-start on boot (Windows)
+
+`scripts/start_secone_brain.bat` starts the server for you, running the
+one-time Calendar authorization (`gcal_auth.py`) automatically if
+`credentials.json` exists but `token.json` doesn't yet. Register it with
+Windows Task Scheduler so it fires every time you log in - there's no way to
+have a script run *before* you log in and still be able to pop open a
+browser for that one-time consent, so "at log on" is the earliest useful
+trigger.
+
+**One-time registration** - open Command Prompt in the project folder and
+run (adjust the path to wherever you actually cloned the repo):
+```cmd
+schtasks /create /tn "Secone Brain" /tr "%cd%\scripts\start_secone_brain.bat" /sc onlogon
+```
+Or via the Task Scheduler GUI: **Create Task** -> **Triggers** tab -> **New**
+-> "At log on" -> **Actions** tab -> **New** -> "Start a program" -> browse to
+`start_secone_brain.bat`.
+
+From then on, logging in opens a console window that starts the server (and,
+the very first time, your browser for Calendar consent - see "Calendar"
+above). Closing that window stops the server. To stop this happening
+automatically, remove the task:
+```cmd
+schtasks /delete /tn "Secone Brain" /f
+```
+
+This makes the same trusted-network-only caveat from "Using it from your
+phone" a standing one, not a one-off choice - the server binds `0.0.0.0`
+(reachable from your whole Wi-Fi network) every time you log in, not just
+when you remember to start it that way.
+
 ## Setup
 
 ```bash
