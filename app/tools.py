@@ -1,4 +1,4 @@
-from . import memory
+from . import memory, research_queue
 
 # Server tools - run on Anthropic's infrastructure, no local execution needed.
 WEB_SEARCH_TOOL = {
@@ -104,7 +104,35 @@ RECALL_TOOL = {
     },
 }
 
-ALL_TOOLS = [WEB_SEARCH_TOOL, REMEMBER_TOOL, RECALL_TOOL]
+QUEUE_LEARNING_TOOL = {
+    "name": "queue_for_learning",
+    "description": (
+        "Queue a topic for the brain to research later (a Wikipedia scan, run from "
+        "the research queue) when you don't have enough confident knowledge to "
+        "answer well. Use this when you notice a real, specific gap in what you "
+        "know - not on every message, only when the conversation genuinely touches "
+        "something you don't know enough about - so the brain can fill that gap "
+        "before it comes up again, rather than guessing or making something up now."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "topic": {
+                "type": "string",
+                "description": (
+                    "The specific subject to research, phrased the way you'd search "
+                    "for it (e.g. \"Quantum entanglement\")."
+                ),
+            },
+        },
+        "required": ["topic"],
+        "additionalProperties": False,
+    },
+}
+
+# Not included in WIKIPEDIA_TOOLS - a scan already IS the research, so letting
+# it queue more research on itself risks a self-referential spiral.
+ALL_TOOLS = [WEB_SEARCH_TOOL, REMEMBER_TOOL, RECALL_TOOL, QUEUE_LEARNING_TOOL]
 WIKIPEDIA_TOOLS = [WIKIPEDIA_SEARCH_TOOL, WIKIPEDIA_FETCH_TOOL, REMEMBER_TOOL]
 
 
@@ -132,5 +160,10 @@ def execute_tool(name: str, tool_input: dict, default_topic: str = "") -> str:
         if not hits:
             return "No relevant memories found."
         return "\n".join(f"- ({h['kind']}) {h['content']}" for h in hits)
+
+    if name == "queue_for_learning":
+        topic = tool_input["topic"]
+        research_queue.enqueue([topic])
+        return f'Queued "{topic}" for learning.'
 
     raise ValueError(f"Unknown client tool: {name}")

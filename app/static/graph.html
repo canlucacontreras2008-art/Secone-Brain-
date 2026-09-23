@@ -73,6 +73,24 @@
   #search::placeholder { color: var(--text-muted); }
   #search:focus { outline: none; border-color: var(--text-secondary); }
 
+  #search-mic {
+    flex: none;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0;
+  }
+  #search-mic:hover { color: var(--text-primary); border-color: var(--text-secondary); }
+  #search-mic.listening { background: #d95926; color: white; border-color: #d95926; }
+  #search-mic:disabled { opacity: 0.35; cursor: not-allowed; }
+
   .legend {
     display: flex;
     gap: 6px;
@@ -488,12 +506,21 @@
   <header>
     <h1>Secone Brain <span>&mdash; Memory Graph</span></h1>
     <input id="search" type="text" placeholder="Search facts, lessons, tasks&hellip;" />
+    <button id="search-mic" type="button" title="Search by voice">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+        <line x1="12" y1="19" x2="12" y2="23"></line>
+        <line x1="8" y1="23" x2="16" y2="23"></line>
+      </svg>
+    </button>
     <div class="legend">
       <button class="legend-item" data-kind="fact"><span class="dot fact"></span>Fact</button>
       <button class="legend-item" data-kind="lesson"><span class="dot lesson"></span>Lesson</button>
       <button class="legend-item" data-kind="task"><span class="dot task"></span>Task</button>
     </div>
     <button id="queue-toggle-btn" class="legend-item">Queue</button>
+    <a class="legend-item" href="/voice">Voice Chat</a>
     <div id="stats"></div>
   </header>
   <main>
@@ -1405,6 +1432,49 @@
   searchEl.addEventListener("input", () => {
     searchQuery = searchEl.value.trim().toLowerCase();
   });
+
+  // --- voice search: fills the search box exactly like typing would ---
+  const searchMicBtn = document.getElementById("search-mic");
+  const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (SpeechRecognitionCtor) {
+    const recognition = new SpeechRecognitionCtor();
+    recognition.lang = "en-US";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    let listening = false;
+
+    recognition.addEventListener("result", (event) => {
+      const transcript = event.results[0][0].transcript;
+      searchEl.value = transcript;
+      searchQuery = transcript.trim().toLowerCase();
+    });
+    recognition.addEventListener("end", () => {
+      listening = false;
+      searchMicBtn.classList.remove("listening");
+    });
+    recognition.addEventListener("error", () => {
+      listening = false;
+      searchMicBtn.classList.remove("listening");
+    });
+
+    searchMicBtn.addEventListener("click", () => {
+      if (listening) {
+        recognition.stop();
+        return;
+      }
+      listening = true;
+      searchMicBtn.classList.add("listening");
+      try {
+        recognition.start();
+      } catch (err) {
+        listening = false;
+        searchMicBtn.classList.remove("listening");
+      }
+    });
+  } else {
+    searchMicBtn.disabled = true;
+    searchMicBtn.title = "Voice search isn't supported in this browser";
+  }
 
   // --- legend toggles ---
   document.querySelectorAll(".legend-item[data-kind]").forEach((btn) => {

@@ -129,6 +129,11 @@ def graph_page():
     return FileResponse(STATIC_DIR / "graph.html")
 
 
+@app.get("/voice")
+def voice_page():
+    return FileResponse(STATIC_DIR / "voice.html")
+
+
 @app.get("/graph/data")
 def graph_data():
     return graph.build_graph()

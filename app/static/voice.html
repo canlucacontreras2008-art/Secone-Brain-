@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Secone Brain — Voice Chat</title>
+<style>
+  :root {
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --bubble-user: #2a3a52;
+    --bubble-assistant: #1f1f1e;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --border: rgba(255, 255, 255, 0.10);
+    --accent: #3987e5;
+    --mic-idle: #2a2a28;
+    --mic-listening: #d95926;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+
+  .app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-wrap: wrap;
+  }
+
+  header h1 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0;
+    white-space: nowrap;
+  }
+
+  header h1 span { color: var(--text-muted); font-weight: 400; }
+
+  header a.nav-link {
+    margin-left: auto;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 13px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 11px;
+  }
+  header a.nav-link:hover { color: var(--text-primary); border-color: var(--text-secondary); }
+
+  label.speak-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  #log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .msg {
+    max-width: min(560px, 80%);
+    padding: 10px 14px;
+    border-radius: 12px;
+    line-height: 1.45;
+    font-size: 14px;
+    white-space: pre-wrap;
+  }
+  .msg.user {
+    align-self: flex-end;
+    background: var(--bubble-user);
+    border-bottom-right-radius: 3px;
+  }
+  .msg.assistant {
+    align-self: flex-start;
+    background: var(--bubble-assistant);
+    border: 1px solid var(--border);
+    border-bottom-left-radius: 3px;
+  }
+  .msg.error {
+    align-self: flex-start;
+    background: rgba(217, 89, 38, 0.15);
+    border: 1px solid rgba(217, 89, 38, 0.4);
+    color: #f3b58f;
+  }
+  .msg.pending { opacity: 0.6; }
+
+  #empty-hint {
+    margin: auto;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+    max-width: 360px;
+    line-height: 1.6;
+  }
+
+  footer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 18px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  #text-input {
+    flex: 1;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-primary);
+    padding: 10px 12px;
+    font-size: 14px;
+    font-family: inherit;
+  }
+  #text-input::placeholder { color: var(--text-muted); }
+  #text-input:focus { outline: none; border-color: var(--text-secondary); }
+
+  #send-btn, #mic-btn {
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  #send-btn {
+    background: var(--accent);
+    color: white;
+    padding: 10px 16px;
+  }
+  #send-btn:hover { filter: brightness(1.1); }
+  #send-btn:disabled { opacity: 0.5; cursor: default; filter: none; }
+
+  #mic-btn {
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--mic-idle);
+    color: var(--text-secondary);
+    flex: 0 0 auto;
+  }
+  #mic-btn:hover { color: var(--text-primary); }
+  #mic-btn.listening {
+    background: var(--mic-listening);
+    color: white;
+    animation: pulse 1.1s ease-in-out infinite;
+  }
+  #mic-btn:disabled { opacity: 0.35; cursor: not-allowed; animation: none; }
+
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(217, 89, 38, 0.5); }
+    50% { box-shadow: 0 0 0 8px rgba(217, 89, 38, 0); }
+  }
+
+  #voice-note {
+    padding: 0 18px 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+    background: var(--surface);
+  }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Secone Brain <span>&mdash; Voice Chat</span></h1>
+    <label class="speak-toggle">
+      <input type="checkbox" id="speak-toggle" checked />
+      Speak replies aloud
+    </label>
+    <a class="nav-link" href="/graph">Memory Graph</a>
+  </header>
+  <div id="log">
+    <div id="empty-hint">
+      Tap the microphone and speak, or type a message below. If the brain
+      doesn't know enough about something you ask, it'll queue that topic
+      to research later - check the queue panel on the Memory Graph page.
+    </div>
+  </div>
+  <div id="voice-note" class="hidden"></div>
+  <footer>
+    <button id="mic-btn" type="button" title="Speak">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+        <line x1="12" y1="19" x2="12" y2="23"></line>
+        <line x1="8" y1="23" x2="16" y2="23"></line>
+      </svg>
+    </button>
+    <input id="text-input" type="text" placeholder="Type a message&hellip;" autocomplete="off" />
+    <button id="send-btn" type="button">Send</button>
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  const log = document.getElementById("log");
+  const emptyHint = document.getElementById("empty-hint");
+  const textInput = document.getElementById("text-input");
+  const sendBtn = document.getElementById("send-btn");
+  const micBtn = document.getElementById("mic-btn");
+  const speakToggle = document.getElementById("speak-toggle");
+  const voiceNote = document.getElementById("voice-note");
+
+  function addMessage(role, text) {
+    if (emptyHint.parentNode) emptyHint.remove();
+    const el = document.createElement("div");
+    el.className = "msg " + role;
+    el.textContent = text;
+    log.appendChild(el);
+    log.scrollTop = log.scrollHeight;
+    return el;
+  }
+
+  function speak(text) {
+    if (!speakToggle.checked || !("speechSynthesis" in window)) return;
+    window.speechSynthesis.cancel(); // don't stack replies if one's still talking
+    const utterance = new SpeechSynthesisUtterance(text);
+    window.speechSynthesis.speak(utterance);
+  }
+
+  let sending = false;
+  function sendMessage() {
+    const text = textInput.value.trim();
+    if (!text || sending) return;
+    sending = true;
+    sendBtn.disabled = true;
+    textInput.value = "";
+    addMessage("user", text);
+    const pending = addMessage("assistant", "…");
+    pending.classList.add("pending");
+
+    fetch("/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: text }),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("Request failed (" + res.status + ")");
+        return res.json();
+      })
+      .then((data) => {
+        pending.classList.remove("pending");
+        pending.textContent = data.reply;
+        speak(data.reply);
+      })
+      .catch((err) => {
+        pending.remove();
+        addMessage("error", "Couldn't reach the brain: " + err.message);
+      })
+      .finally(() => {
+        sending = false;
+        sendBtn.disabled = false;
+      });
+  }
+
+  sendBtn.addEventListener("click", sendMessage);
+  textInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") sendMessage();
+  });
+
+  // --- voice input ---
+  const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (SpeechRecognitionCtor) {
+    const recognition = new SpeechRecognitionCtor();
+    recognition.lang = "en-US";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    let listening = false;
+
+    recognition.addEventListener("result", (event) => {
+      const transcript = event.results[0][0].transcript;
+      textInput.value = transcript;
+      sendMessage();
+    });
+    recognition.addEventListener("end", () => {
+      listening = false;
+      micBtn.classList.remove("listening");
+    });
+    recognition.addEventListener("error", (event) => {
+      listening = false;
+      micBtn.classList.remove("listening");
+      if (event.error !== "aborted" && event.error !== "no-speech") {
+        voiceNote.textContent = "Voice input error: " + event.error + " - you can still type.";
+        voiceNote.classList.remove("hidden");
+      }
+    });
+
+    micBtn.addEventListener("click", () => {
+      if (listening) {
+        recognition.stop();
+        return;
+      }
+      voiceNote.classList.add("hidden");
+      listening = true;
+      micBtn.classList.add("listening");
+      try {
+        recognition.start();
+      } catch (err) {
+        listening = false;
+        micBtn.classList.remove("listening");
+      }
+    });
+  } else {
+    micBtn.disabled = true;
+    micBtn.title = "Voice input isn't supported in this browser";
+    voiceNote.textContent =
+      "Voice input isn't supported in this browser - try Chrome or Edge. Typing still works.";
+    voiceNote.classList.remove("hidden");
+  }
+
+  if (!("speechSynthesis" in window)) {
+    speakToggle.checked = false;
+    speakToggle.parentElement.classList.add("hidden");
+  }
+})();
+</script>
+</body>
+</html>

@@ -7,9 +7,13 @@ stored as long-term memory it recalls on future work).
 ## How it thinks
 
 - **`app/brain.py`** - the agentic loop. Every chat or task request runs
-  Claude in a tool-use loop with three tools: `web_search` (a server-side
+  Claude in a tool-use loop with four tools: `web_search` (a server-side
   tool, so it's real live internet access, not training data), `remember`,
-  and `recall`.
+  `recall`, and `queue_for_learning` - the model calls this itself when it
+  notices a real gap in what it knows, adding that topic to the research
+  queue (see below) instead of just guessing. It's the same queue the
+  **Voice Chat** page and the graph's Queue panel both show, so a gap
+  surfaced in conversation shows up right there to research later.
 - **`app/memory.py` + `app/db.py`** - long-term memory, backed by SQLite.
   Every memory is a `fact` (something true about the world or the user) or a
   `lesson` (something learned about how to do a task well), plus two
@@ -133,6 +137,29 @@ feature works offline and has nothing to vendor or build. Layout is
 deterministic (seeded per node ID), so the same data settles into the same
 positions across reloads - only the live auto-rotate animates.
 
+The search box also has a microphone button next to it, for searching your
+memories by voice instead of typing.
+
+## Voice Chat (`/voice`)
+
+A minimal chat page for talking to the brain out loud: tap the mic, speak,
+and it transcribes your speech, sends it to `/chat`, shows the reply, and
+(unless you uncheck "Speak replies aloud") reads it back to you. Typing
+still works exactly as before - the mic is an alternative input, not a
+replacement.
+
+Voice input and output are both just browser APIs
+(`SpeechRecognition`/`webkitSpeechRecognition` for input,
+`speechSynthesis` for output) - nothing server-side, no extra API key or
+service. Chrome and Edge (desktop and Android) support both; Firefox and
+Safari have little to no `SpeechRecognition` support, so the mic button
+disables itself with an explanation and typing still works everywhere.
+
+When you ask about something the brain doesn't know enough about, it can
+call `queue_for_learning` on its own (see "How it thinks" above) to add
+that topic to the research queue - check the Queue panel on the Memory
+Graph page to see it show up and run it.
+
 ## Setup
 
 ```bash
@@ -163,6 +190,7 @@ uvicorn app.main:app --reload
 | POST   | `/memory`    | `{"kind", "content", "topic", "category", "tags"}` | Manually add a memory. `topic` groups it with others on the same subject; `category` (see `tools.CATEGORIES`) nests that topic under a grand-topic globe. |
 | GET    | `/graph`     | -                               | The memory graph UI (open in a browser). |
 | GET    | `/graph/data`| -                               | `{nodes, edges}` JSON backing the graph UI. |
+| GET    | `/voice`     | -                               | The voice chat UI (open in a browser). |
 | GET    | `/health`    | -                               | Liveness check. |
 
 ### Example
