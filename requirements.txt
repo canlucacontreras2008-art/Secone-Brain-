@@ -7,3 +7,8 @@ pytest>=8.0
 google-api-python-client>=2.100
 google-auth-httplib2>=0.2
 google-auth-oauthlib>=1.2
+# Windows ships no system IANA timezone database at all, so zoneinfo (used
+# by calendar_tool.now() whenever BRAIN_TIMEZONE is set) silently has
+# nowhere to look without this - harmless extra weight on Linux/macOS,
+# where zoneinfo already prefers the system copy and just ignores this.
+tzdata>=2024.1

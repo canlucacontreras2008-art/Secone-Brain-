@@ -274,6 +274,46 @@ phone" a standing one, not a one-off choice - the server binds `0.0.0.0`
 (reachable from your whole Wi-Fi network) every time you log in, not just
 when you remember to start it that way.
 
+This is a separate, complementary option to the desktop app below - the
+`.bat` task is for "start silently in the background at login, no window to
+look at"; the desktop app is for "double-click an icon and get a window I
+can see and close". Use either, both, or neither.
+
+## Desktop app
+
+A native window (no browser tab, no terminal) that starts the server for you
+in the background and shows the interface directly - built with
+[pywebview](https://pywebview.flowrl.com/), which just wraps the OS's own
+webview (Edge WebView2 on Windows) rather than bundling a whole browser.
+
+**Run it from source** (any OS, needs the venv from Setup below plus the
+desktop extras):
+```bash
+pip install -r requirements-desktop.txt
+python app_desktop.py
+```
+
+**Build a standalone Windows `.exe`** - this packages the server, the
+interface, and a Python runtime into one file someone can double-click
+without installing Python at all. PyInstaller has to run on the target OS,
+so this step is Windows-only and has to happen on an actual Windows
+machine - it isn't something that can be produced or tested from a Linux
+dev box:
+```cmd
+pip install -r requirements-desktop.txt
+pyinstaller secone_brain.spec
+```
+This produces `dist\Secone Brain.exe`. Copy it wherever you like, and drop
+your `.env` and `credentials.json` (if you use Calendar/Gmail) in the same
+folder - the packaged app reads them next to the exe, and keeps its
+database (`brain.db`) and Google `token.json` there too, so everything
+persists across launches.
+
+If PyInstaller's import scan misses something at build time, you'll see an
+`ImportError` in the packaged exe for a module that works fine with
+`python app_desktop.py` - add it to the `hiddenimports` list in
+`secone_brain.spec` and rebuild.
+
 ## Setup
 
 ```bash

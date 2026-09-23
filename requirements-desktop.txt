@@ -1,0 +1,12 @@
+# Desktop app extras - on top of the base server dependencies. Kept separate
+# so a plain server install (Docker, a Linux box, etc.) doesn't pull in a GUI
+# toolkit and a packaging tool it'll never use.
+-r requirements.txt
+
+# Native window around the server's own web UI - uses the OS's built-in
+# webview (Edge WebView2 on Windows) instead of bundling a browser engine.
+pywebview>=5.0
+
+# Packages app_desktop.py into a standalone .exe. See README "Desktop app"
+# section for the build command.
+pyinstaller>=6.5
