@@ -589,7 +589,7 @@
   }
 
   // --- scene constants ---
-  const GLOBE_RADIUS = 120;
+  const GLOBE_RADIUS = 132; // 10% bigger than the original 120
   // Loose (unbranched) memories orbit the main globe directly, close in.
   const LOOSE_ORBIT_MIN = 145;
   const LOOSE_ORBIT_JITTER = 25;
@@ -702,16 +702,22 @@
       const branchIdsInCategory = byCategory.get(name);
       const totalMembers = branchIdsInCategory.reduce((sum, id) => sum + byBranch.get(id).length, 0);
       const rng = mulberry32(hashStr("category-" + name));
-      const { theta, phi } = directionToThetaPhi(fibonacciDirection(idx, categoryNames.length));
+      const dir0 = fibonacciDirection(idx, categoryNames.length);
       return {
         name,
         radius: Math.min(65, 30 + Math.sqrt(totalMembers) * 6),
-        orbitTheta: theta,
-        orbitPhi0: phi,
+        // Orbit is a great circle: dir0 rotates around `axis`, a random
+        // direction perpendicular to it (via randomTangent). Unlike
+        // precessing longitude at a fixed latitude - which freezes solid
+        // for anything placed exactly at a pole, which is exactly where
+        // the fibonacci spacing puts one of exactly two categories - this
+        // moves visibly no matter how many categories there are.
+        dir0,
+        axis: randomTangent(rng, dir0),
         orbitRadius: CATEGORY_ORBIT_MIN + rng() * CATEGORY_ORBIT_JITTER,
-        // Slower still than a topic globe's own orbit - the biggest
-        // structures drift the most sedately.
-        orbitSpeed: (rng() - 0.5) * 0.012,
+        // A touch slower than the levels it holds, since it's the biggest
+        // structure in the scene.
+        orbitSpeed: (rng() - 0.5) * 0.03,
         branchIds: branchIdsInCategory,
         cx: 0, cy: 0, cz: 0,
       };
@@ -779,10 +785,10 @@
 
   function updateOrbits(tSeconds) {
     for (const c of categoryGlobes) {
-      const phi = c.orbitPhi0 + tSeconds * c.orbitSpeed;
-      c.cx = c.orbitRadius * Math.sin(c.orbitTheta) * Math.cos(phi);
-      c.cy = c.orbitRadius * Math.cos(c.orbitTheta);
-      c.cz = c.orbitRadius * Math.sin(c.orbitTheta) * Math.sin(phi);
+      const dir = vRotateAroundAxis(c.dir0, c.axis, tSeconds * c.orbitSpeed);
+      c.cx = dir.x * c.orbitRadius;
+      c.cy = dir.y * c.orbitRadius;
+      c.cz = dir.z * c.orbitRadius;
     }
     for (const g of topicGlobes) {
       const base = g.parentCategory || { cx: 0, cy: 0, cz: 0 };
