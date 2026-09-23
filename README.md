@@ -115,6 +115,63 @@ server; there's nothing Wikipedia-scan-specific to make work separately.
 `--host 0.0.0.0` makes the API (including everything in memory) reachable
 by any device on that network, not just your phone.
 
+## Running the whole brain on your phone (no PC needed)
+
+This is a plain Python/FastAPI app with a SQLite file for storage - nothing
+in it needs a desktop OS. On **Android**, [Termux](https://f-droid.org/en/packages/com.termux/)
+gives you a real Linux userland with Python, so the brain can run entirely
+on the phone itself. (Get Termux from F-Droid, not the Play Store - the Play
+Store build is outdated and no longer updated.) There's no equivalent on
+iPhone (iOS doesn't allow apps to run arbitrary background network servers)
+- see the section above instead to have an iPhone connect to a brain
+running on a PC.
+
+1. Install Termux, open it, and set up Python and git:
+   ```bash
+   pkg update && pkg upgrade
+   pkg install python git
+   ```
+2. Clone this repo and install dependencies:
+   ```bash
+   git clone https://github.com/canlucacontreras2008-art/Secone-Brain- brain
+   cd brain
+   pip install -r requirements.txt
+   ```
+   If `pydantic` fails to build (it has a Rust component and Termux has no
+   prebuilt wheel for it), run `pkg install rust binutils` first and retry -
+   it compiles fine, just slowly on a phone CPU. Give it a few minutes.
+3. Set up your API key:
+   ```bash
+   cp .env.example .env
+   pkg install nano   # or use any editor you're comfortable with
+   nano .env          # set ANTHROPIC_API_KEY, then Ctrl+O, Enter, Ctrl+X to save
+   ```
+4. Start the server:
+   ```bash
+   uvicorn app.main:app --host 0.0.0.0 --reload
+   ```
+5. Open `http://127.0.0.1:8000/graph` in the phone's own browser. Using
+   `--host 0.0.0.0` (rather than the default localhost-only) also means any
+   other device on the same Wi-Fi can reach it at `http://<phone's
+   IP>:8000/graph` - same trusted-network-only caveat as above, and find the
+   phone's IP the same way (in Android, tap the connected Wi-Fi network's
+   name in Settings to see its IP address).
+
+**Keeping it running in the background**: Android aggressively kills
+background processes to save battery, which will kill your server the
+moment you switch apps or lock the screen unless you tell it not to:
+- Run `termux-wake-lock` (built into Termux, no extra app needed) before
+  starting the server, so Android doesn't suspend Termux.
+- In Android's own Settings, find Termux under Apps -> Battery and set it
+  to **Unrestricted**, so Android's battery optimizer leaves it alone too.
+- Start the server inside a `tmux` session (`pkg install tmux`, then
+  `tmux new -s brain`) so closing the terminal view doesn't kill the
+  process - reattach any time with `tmux attach -t brain`.
+
+Your memories live in `brain.db` inside Termux's own storage, which is
+wiped if you uninstall Termux - back it up occasionally (`termux-setup-storage`
+gives Termux access to your phone's shared storage to copy it out to).
+
 A **Queue** button in the header opens a panel for managing the research
 queue entirely from the browser - no `curl` needed. Add a topic (typed or
 Enter), remove one with its `×`, **Run** to work through everything pending,
