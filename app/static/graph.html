@@ -257,6 +257,57 @@
     margin: 0 4px 4px 0;
   }
 
+  .panel-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 18px;
+  }
+
+  .panel-actions button {
+    flex: 1;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    padding: 8px 10px;
+    cursor: pointer;
+  }
+
+  .panel-actions button:hover { border-color: var(--text-secondary); color: var(--text-primary); }
+  .panel-actions button:disabled { opacity: 0.45; cursor: default; }
+  .panel-actions button.danger { color: #e6786b; border-color: rgba(230, 120, 107, 0.4); }
+  .panel-actions button.danger:hover { border-color: #e6786b; color: #ff8f80; }
+
+  .panel-note {
+    margin-top: 18px;
+    font-size: 12px;
+    color: var(--text-muted);
+    font-style: italic;
+  }
+
+  .panel-error {
+    font-size: 12px;
+    color: #e6786b;
+    margin: -6px 0 14px;
+  }
+
+  #panel-content input[type="text"],
+  #panel-content textarea {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-primary);
+    padding: 7px 9px;
+    font-size: 13px;
+    font-family: inherit;
+    resize: vertical;
+  }
+
+  #panel-content input[type="text"]:focus,
+  #panel-content textarea:focus { outline: none; border-color: var(--text-secondary); }
+
   #empty-state {
     position: absolute;
     left: 0;
@@ -1377,11 +1428,23 @@
   }
 
   // --- selection / panel ---
+  // Only "m<id>" nodes (facts/lessons, the `memories` table) are editable -
+  // "t<id>" tasks live in task_log with no edit/delete endpoint of their own.
+  function memoryIdFor(node) {
+    return node.id.startsWith("m") ? node.id.slice(1) : null;
+  }
+
   function openPanel(node) {
     selectedId = node.id;
+    renderPanelView(node);
+    panel.classList.add("open");
+  }
+
+  function renderPanelView(node) {
     const tagsHtml = node.tags.length
       ? node.tags.map((t) => `<span class="tag-chip">${escapeHtml(t)}</span>`).join("")
       : '<span class="field-value">&mdash;</span>';
+    const memoryId = memoryIdFor(node);
     panelContent.innerHTML = `
       <span class="panel-kind ${node.kind}">${node.kind}</span>
       <h2>${escapeHtml(node.label)}</h2>
@@ -1413,8 +1476,108 @@
         <div class="field-label">Connections</div>
         <div class="field-value">${node.degree}</div>
       </div>
+      ${memoryId
+        ? `<div class="panel-actions">
+            <button id="panel-edit-btn" type="button">Edit</button>
+            <button id="panel-delete-btn" type="button" class="danger">Delete</button>
+          </div>`
+        : `<div class="panel-note">Tasks are read-only here - only facts and lessons can be edited or deleted.</div>`
+      }
     `;
-    panel.classList.add("open");
+    if (memoryId) {
+      document.getElementById("panel-edit-btn").addEventListener("click", () => renderPanelEdit(node));
+      document.getElementById("panel-delete-btn").addEventListener("click", () => deleteMemory(node));
+    }
+  }
+
+  function renderPanelEdit(node) {
+    panelContent.innerHTML = `
+      <span class="panel-kind ${node.kind}">${node.kind}</span>
+      <h2>Edit ${escapeHtml(node.kind)}</h2>
+      <div class="field">
+        <div class="field-label">Content</div>
+        <textarea id="edit-content" rows="4">${escapeHtml(node.detail)}</textarea>
+      </div>
+      <div class="field">
+        <div class="field-label">Topic</div>
+        <input id="edit-topic" type="text" value="${escapeHtml(node.topic)}" />
+      </div>
+      <div class="field">
+        <div class="field-label">Category</div>
+        <input id="edit-category" type="text" value="${escapeHtml(node.category)}" />
+      </div>
+      <div class="field">
+        <div class="field-label">Tags</div>
+        <input id="edit-tags" type="text" value="${escapeHtml(node.tags.join(", "))}" placeholder="comma, separated" />
+      </div>
+      <div id="edit-error" class="panel-error hidden"></div>
+      <div class="panel-actions">
+        <button id="panel-save-btn" type="button">Save</button>
+        <button id="panel-cancel-btn" type="button">Cancel</button>
+      </div>
+    `;
+    document.getElementById("panel-cancel-btn").addEventListener("click", () => renderPanelView(node));
+    document.getElementById("panel-save-btn").addEventListener("click", () => saveMemory(node));
+  }
+
+  function saveMemory(node) {
+    const memoryId = memoryIdFor(node);
+    const saveBtn = document.getElementById("panel-save-btn");
+    const errorEl = document.getElementById("edit-error");
+    saveBtn.disabled = true;
+    errorEl.classList.add("hidden");
+
+    const payload = {
+      content: document.getElementById("edit-content").value.trim(),
+      topic: document.getElementById("edit-topic").value.trim(),
+      category: document.getElementById("edit-category").value.trim(),
+      tags: document.getElementById("edit-tags").value.split(",").map((t) => t.trim()).filter(Boolean),
+    };
+
+    fetch(`/memory/${memoryId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("Save failed (" + res.status + ")");
+        return refreshGraphAndReopen(node.id);
+      })
+      .catch((err) => {
+        saveBtn.disabled = false;
+        errorEl.textContent = err.message;
+        errorEl.classList.remove("hidden");
+      });
+  }
+
+  function deleteMemory(node) {
+    if (!confirm("Delete this memory? This can't be undone.")) return;
+    const memoryId = memoryIdFor(node);
+    fetch(`/memory/${memoryId}`, { method: "DELETE" })
+      .then((res) => {
+        if (!res.ok) throw new Error("Delete failed (" + res.status + ")");
+        panel.classList.remove("open");
+        selectedId = null;
+        return refreshGraph();
+      })
+      .catch((err) => alert("Couldn't delete: " + err.message));
+  }
+
+  function refreshGraph() {
+    return fetch("/graph/data")
+      .then((r) => r.json())
+      .then(buildGraph);
+  }
+
+  function refreshGraphAndReopen(nodeId) {
+    return refreshGraph().then(() => {
+      const updated = byId.get(nodeId);
+      if (updated) openPanel(updated);
+      else {
+        panel.classList.remove("open");
+        selectedId = null;
+      }
+    });
   }
 
   document.getElementById("panel-close").addEventListener("click", () => {
@@ -1491,6 +1654,12 @@
   });
 
   // --- build ---
+  // buildGraph() is called again after every edit/delete (see saveMemory/
+  // deleteMemory above) to recompute branches/categories server-side, not
+  // just once at load - so the render loop must only ever be kicked off
+  // once, or each refresh would stack another concurrent requestAnimationFrame
+  // chain on top of the last.
+  let animationStarted = false;
   function buildGraph(data) {
     nodes = data.nodes.map((n) => ({ ...n }));
     byId = new Map(nodes.map((n) => [n.id, n]));
@@ -1503,7 +1672,10 @@
     statsEl.textContent = `${nodes.length} memories · ${edges.length} connections`;
     emptyState.classList.toggle("hidden", nodes.length > 0);
 
-    requestAnimationFrame(loop);
+    if (!animationStarted) {
+      animationStarted = true;
+      requestAnimationFrame(loop);
+    }
   }
 
   // --- research queue: progress bar + live, editable list ---

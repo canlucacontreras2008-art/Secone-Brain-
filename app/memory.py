@@ -30,6 +30,46 @@ def add_memory(
         return cur.lastrowid
 
 
+def get_memory(memory_id: int) -> Optional[dict]:
+    with db.get_conn() as conn:
+        row = conn.execute("SELECT * FROM memories WHERE id = ?", (memory_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def update_memory(
+    memory_id: int,
+    content: Optional[str] = None,
+    topic: Optional[str] = None,
+    category: Optional[str] = None,
+    tags: Optional[List[str]] = None,
+) -> Optional[dict]:
+    """Update only the fields provided - None means "leave as is", not "clear"."""
+    fields = []
+    values = []
+    if content is not None:
+        fields.append("content = ?")
+        values.append(content)
+    if topic is not None:
+        fields.append("topic = ?")
+        values.append(topic)
+    if category is not None:
+        fields.append("category = ?")
+        values.append(category)
+    if tags is not None:
+        fields.append("tags = ?")
+        values.append(",".join(tags))
+
+    if fields:
+        with db.get_conn() as conn:
+            conn.execute(f"UPDATE memories SET {', '.join(fields)} WHERE id = ?", (*values, memory_id))
+    return get_memory(memory_id)
+
+
+def delete_memory(memory_id: int) -> None:
+    with db.get_conn() as conn:
+        conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
+
+
 def list_memories(kind: Optional[str] = None, limit: int = 200) -> List[dict]:
     with db.get_conn() as conn:
         if kind:

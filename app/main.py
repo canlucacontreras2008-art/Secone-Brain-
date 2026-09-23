@@ -59,6 +59,13 @@ class MemoryIn(BaseModel):
     tags: List[str] = []
 
 
+class MemoryUpdate(BaseModel):
+    content: Optional[str] = None
+    topic: Optional[str] = None
+    category: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+
 class CalendarEventIn(BaseModel):
     summary: str
     start: str
@@ -138,6 +145,20 @@ def add_memory(item: MemoryIn):
         item.kind, item.content, item.tags, source="manual", topic=item.topic, category=item.category
     )
     return {"id": memory_id}
+
+
+@app.patch("/memory/{memory_id}")
+def update_memory(memory_id: int, item: MemoryUpdate):
+    updated = memory_store.update_memory(memory_id, **item.model_dump())
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return updated
+
+
+@app.delete("/memory/{memory_id}")
+def delete_memory(memory_id: int):
+    memory_store.delete_memory(memory_id)
+    return {"deleted": memory_id}
 
 
 @app.get("/calendar/events")
