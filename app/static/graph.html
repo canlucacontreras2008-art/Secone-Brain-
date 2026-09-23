@@ -6,15 +6,19 @@
 <title>Secone Brain — Memory Graph</title>
 <style>
   :root {
-    --page: #0d0d0d;
-    --surface: #1a1a19;
-    --text-primary: #ffffff;
-    --text-secondary: #c3c2b7;
-    --text-muted: #898781;
-    --border: rgba(255, 255, 255, 0.10);
-    --fact: #8a8a86;
-    --lesson: #5fa83d;
-    --task: #3987e5;
+    --page: #0b0e14;
+    --surface: #11151d;
+    --surface-2: #171c26;
+    --text-primary: #e6e9f0;
+    --text-secondary: #8b93a7;
+    --text-muted: #566078;
+    --border: #232937;
+    --accent: #22d3ee;
+    --fact: #8b93a7;
+    --lesson: #4ade80;
+    --task: #60a5fa;
+    --danger: #f87171;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "Courier New", monospace;
   }
 
   * { box-sizing: border-box; }
@@ -46,32 +50,38 @@
   }
 
   header h1 {
-    font-size: 15px;
+    font-size: 13px;
     font-weight: 600;
     margin: 0;
     white-space: nowrap;
     color: var(--text-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
   }
 
   header h1 span {
     color: var(--text-muted);
     font-weight: 400;
+    text-transform: none;
+    letter-spacing: normal;
+    margin-left: 4px;
   }
 
   #search {
     flex: 1 1 220px;
     min-width: 160px;
     max-width: 360px;
-    background: rgba(255, 255, 255, 0.06);
+    background: var(--surface-2);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 5px;
     color: var(--text-primary);
     padding: 6px 10px;
-    font-size: 13px;
+    font-size: 12px;
+    font-family: var(--mono);
   }
 
   #search::placeholder { color: var(--text-muted); }
-  #search:focus { outline: none; border-color: var(--text-secondary); }
+  #search:focus { outline: none; border-color: var(--accent); }
 
   #search-mic {
     flex: none;
@@ -82,13 +92,13 @@
     justify-content: center;
     background: transparent;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 5px;
     color: var(--text-secondary);
     cursor: pointer;
     padding: 0;
   }
   #search-mic:hover { color: var(--text-primary); border-color: var(--text-secondary); }
-  #search-mic.listening { background: #d95926; color: white; border-color: #d95926; }
+  #search-mic.listening { background: #ef4444; color: white; border-color: #ef4444; }
   #search-mic:disabled { opacity: 0.35; cursor: not-allowed; }
 
   .legend {
@@ -102,15 +112,17 @@
     gap: 6px;
     background: transparent;
     border: 1px solid var(--border);
-    border-radius: 999px;
+    border-radius: 5px;
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
     padding: 5px 10px 5px 8px;
     cursor: pointer;
   }
 
   .legend-item.off { opacity: 0.35; }
-  .legend-item:hover { border-color: var(--text-secondary); }
+  .legend-item:hover { background: var(--surface-2); color: var(--text-primary); }
 
   .dot {
     width: 9px;
@@ -129,6 +141,7 @@
     font-size: 12px;
     color: var(--text-muted);
     white-space: nowrap;
+    font-family: var(--mono);
   }
 
   main {
@@ -207,17 +220,19 @@
 
   .panel-kind {
     display: inline-block;
-    font-size: 11px;
+    font-size: 10px;
+    font-family: var(--mono);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    padding: 2px 8px;
-    border-radius: 999px;
+    letter-spacing: 0.06em;
+    padding: 3px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
     margin-bottom: 12px;
   }
 
-  .panel-kind.fact { background: rgba(138, 138, 134, 0.25); color: var(--fact); }
-  .panel-kind.lesson { background: rgba(95, 168, 61, 0.2); color: var(--lesson); }
-  .panel-kind.task { background: rgba(57, 135, 229, 0.2); color: var(--task); }
+  .panel-kind.fact { background: rgba(139, 147, 167, 0.12); color: var(--fact); }
+  .panel-kind.lesson { background: rgba(74, 222, 128, 0.12); color: var(--lesson); border-color: rgba(74, 222, 128, 0.3); }
+  .panel-kind.task { background: rgba(96, 165, 250, 0.12); color: var(--task); border-color: rgba(96, 165, 250, 0.3); }
 
   #panel-content h2 {
     font-size: 14px;
@@ -231,10 +246,11 @@
   }
 
   #panel-content .field-label {
-    font-size: 11px;
+    font-size: 10px;
+    font-family: var(--mono);
     color: var(--text-muted);
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.06em;
     margin-bottom: 4px;
   }
 
@@ -248,12 +264,13 @@
 
   .tag-chip {
     display: inline-block;
-    background: rgba(255, 255, 255, 0.06);
+    background: var(--surface-2);
     border: 1px solid var(--border);
     color: var(--text-secondary);
-    border-radius: 999px;
+    border-radius: 4px;
     padding: 2px 8px;
     font-size: 11px;
+    font-family: var(--mono);
     margin: 0 4px 4px 0;
   }
 
@@ -267,17 +284,21 @@
     flex: 1;
     background: none;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 5px;
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
     padding: 8px 10px;
     cursor: pointer;
   }
 
   .panel-actions button:hover { border-color: var(--text-secondary); color: var(--text-primary); }
   .panel-actions button:disabled { opacity: 0.45; cursor: default; }
-  .panel-actions button.danger { color: #e6786b; border-color: rgba(230, 120, 107, 0.4); }
-  .panel-actions button.danger:hover { border-color: #e6786b; color: #ff8f80; }
+  .panel-actions button.primary { background: rgba(34, 211, 238, 0.12); color: var(--accent); border-color: rgba(34, 211, 238, 0.4); }
+  .panel-actions button.primary:hover { border-color: var(--accent); }
+  .panel-actions button.danger { color: var(--danger); border-color: rgba(248, 113, 113, 0.35); }
+  .panel-actions button.danger:hover { border-color: var(--danger); color: #fca5a5; }
 
   .panel-note {
     margin-top: 18px;
@@ -288,16 +309,16 @@
 
   .panel-error {
     font-size: 12px;
-    color: #e6786b;
+    color: var(--danger);
     margin: -6px 0 14px;
   }
 
   #panel-content input[type="text"],
   #panel-content textarea {
     width: 100%;
-    background: rgba(255, 255, 255, 0.06);
+    background: var(--surface-2);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 5px;
     color: var(--text-primary);
     padding: 7px 9px;
     font-size: 13px;
@@ -306,7 +327,7 @@
   }
 
   #panel-content input[type="text"]:focus,
-  #panel-content textarea:focus { outline: none; border-color: var(--text-secondary); }
+  #panel-content textarea:focus { outline: none; border-color: var(--accent); }
 
   #empty-state {
     position: absolute;
@@ -375,7 +396,7 @@
   #learning-bar-fill {
     height: 100%;
     width: 0%;
-    background: linear-gradient(90deg, #c9850a, #f7b54f);
+    background: linear-gradient(90deg, #0e7490, #22d3ee);
     border-radius: 999px;
     transition: width 300ms ease;
   }
@@ -411,6 +432,7 @@
     padding: 8px 12px;
     font-size: 12px;
     font-weight: 600;
+    white-space: nowrap;
     border-bottom: 1px solid var(--border);
     color: var(--text-primary);
     display: flex;
@@ -431,6 +453,8 @@
     color: var(--text-secondary);
     font-size: 10px;
     font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
     padding: 5px 9px;
     cursor: pointer;
   }
@@ -463,7 +487,7 @@
   #queue-add-input {
     flex: 1 1 auto;
     min-width: 0;
-    background: rgba(255, 255, 255, 0.06);
+    background: var(--surface-2);
     border: 1px solid var(--border);
     border-radius: 4px;
     color: var(--text-primary);
@@ -472,7 +496,7 @@
   }
 
   #queue-add-input::placeholder { color: var(--text-muted); }
-  #queue-add-input:focus { outline: none; border-color: var(--text-secondary); }
+  #queue-add-input:focus { outline: none; border-color: var(--accent); }
 
   #queue-add-button {
     background: none;
@@ -510,11 +534,11 @@
 
   .queue-status-dot.pending { background: var(--text-muted); }
   .queue-status-dot.running {
-    background: #f7b54f;
+    background: var(--accent);
     animation: queue-pulse 1s ease-in-out infinite;
   }
   .queue-status-dot.done { background: var(--lesson); }
-  .queue-status-dot.error { background: #e66767; }
+  .queue-status-dot.error { background: var(--danger); }
 
   @keyframes queue-pulse {
     0%, 100% { opacity: 1; }
@@ -541,7 +565,7 @@
     margin: -6px;
   }
 
-  .queue-row-delete:hover { color: #e66767; }
+  .queue-row-delete:hover { color: var(--danger); }
 
   .queue-empty-hint {
     padding: 10px 12px;
@@ -633,29 +657,34 @@
   const searchEl = document.getElementById("search");
   const emptyState = document.getElementById("empty-state");
 
-  const COLORS = { fact: "#8a8a86", lesson: "#5fa83d", task: "#3987e5" };
+  // The solar system: the main globe is the Sun, category globes are the
+  // Planets orbiting it, topic globes are each Planet's Moons, and
+  // individual memories are the small bodies orbiting a Moon.
+  const COLORS = { fact: "#8b93a7", lesson: "#4ade80", task: "#60a5fa" };
   // Cycled per connected component ("branch") to color same-branch facts
   // alike - distinct from the lesson/task hues above so kind and branch
-  // never look like the same signal.
-  const BRANCH_COLORS = ["#d95926", "#199e70", "#c98500", "#d55181", "#9085e9", "#e66767"];
-  // Matching gradient/glow stops per branch hue - each topic mini-globe is a
-  // small tinted echo of the main golden globe's own gradient treatment.
+  // never look like the same signal. A refined, mostly cool categorical
+  // palette (two warmer hues kept for distinction, same reasoning a
+  // dataviz categorical set uses) rather than the previous neon spread.
+  const BRANCH_COLORS = ["#38bdf8", "#2dd4bf", "#a78bfa", "#f472b6", "#fbbf24", "#64748b"];
+  // Matching gradient/glow stops per branch hue - each Moon is a small
+  // tinted echo of the Sun's own gradient treatment.
   const BRANCH_GLOBE_STYLES = [
-    { light: "rgba(255, 194, 148, 0.92)", dark: "rgba(90, 35, 12, 0.2)", glow: "rgba(255, 140, 80, 0.55)" },
-    { light: "rgba(150, 240, 205, 0.92)", dark: "rgba(8, 60, 42, 0.2)", glow: "rgba(60, 220, 170, 0.5)" },
-    { light: "rgba(255, 223, 158, 0.92)", dark: "rgba(80, 52, 0, 0.2)", glow: "rgba(255, 190, 80, 0.5)" },
-    { light: "rgba(255, 195, 213, 0.92)", dark: "rgba(85, 30, 50, 0.2)", glow: "rgba(255, 130, 170, 0.5)" },
-    { light: "rgba(214, 204, 255, 0.92)", dark: "rgba(50, 45, 90, 0.2)", glow: "rgba(160, 140, 255, 0.5)" },
-    { light: "rgba(255, 195, 195, 0.92)", dark: "rgba(90, 30, 30, 0.2)", glow: "rgba(255, 130, 130, 0.5)" },
+    { light: "rgba(186, 230, 253, 0.92)", dark: "rgba(12, 50, 70, 0.2)", glow: "rgba(56, 189, 248, 0.5)" },
+    { light: "rgba(153, 246, 228, 0.92)", dark: "rgba(6, 60, 50, 0.2)", glow: "rgba(45, 212, 191, 0.5)" },
+    { light: "rgba(221, 214, 254, 0.92)", dark: "rgba(45, 35, 80, 0.2)", glow: "rgba(167, 139, 250, 0.5)" },
+    { light: "rgba(251, 207, 232, 0.92)", dark: "rgba(75, 20, 45, 0.2)", glow: "rgba(244, 114, 182, 0.5)" },
+    { light: "rgba(253, 230, 138, 0.92)", dark: "rgba(70, 50, 10, 0.2)", glow: "rgba(251, 191, 36, 0.5)" },
+    { light: "rgba(203, 213, 225, 0.92)", dark: "rgba(30, 35, 45, 0.2)", glow: "rgba(100, 116, 139, 0.5)" },
   ];
-  // A single neutral "container" look for category globes - deliberately
-  // not branch-colored, since one category (e.g. "Mechanics") can hold
-  // several differently colored topic globes inside it.
+  // A single neutral, cyan-tinted "container" look for Planets (category
+  // globes) - deliberately not branch-colored, since one category (e.g.
+  // "Mechanics") can hold several differently colored Moons.
   const CATEGORY_GLOBE_STYLE = {
-    light: "rgba(225, 240, 255, 0.92)",
-    dark: "rgba(20, 40, 65, 0.22)",
-    glow: "rgba(140, 200, 255, 0.55)",
-    color: "rgba(170, 210, 240, 0.5)",
+    light: "rgba(207, 250, 254, 0.92)",
+    dark: "rgba(10, 45, 55, 0.25)",
+    glow: "rgba(34, 211, 238, 0.55)",
+    color: "rgba(103, 232, 249, 0.55)",
   };
   const hiddenKinds = new Set();
 
@@ -802,6 +831,11 @@
         // A touch slower than the levels it holds, since it's the biggest
         // structure in the scene.
         orbitSpeed: (rng() - 0.5) * 0.03,
+        // Each Planet's ring sits at its own fixed tilt (like a real axial
+        // tilt) - seeded per category name so it's stable across reloads,
+        // and varied enough that a glance at several planets doesn't look
+        // like the same ring copy-pasted around the scene.
+        ringTilt: 0.35 + rng() * 0.5,
         branchIds: branchIdsInCategory,
         cx: 0, cy: 0, cz: 0,
       };
@@ -964,17 +998,21 @@
     return vNormalize({ x: v.x - d * p.x, y: v.y - d * p.y, z: v.z - d * p.z });
   }
 
-  // --- globe rendering: a dense golden holographic core, not a flat map ---
+  // --- the Sun: a bright, physically-plausible star, instrumented with a
+  // cool cyan HUD overlay (graticule + frame rings) rather than the warm
+  // hologram glow this used to have everywhere - the warmth stays on the
+  // star's own surface (core, circuit-trace flares), the cyan reads as
+  // "instrument", keeping the two visually distinct. ---
   function drawGlobe() {
     const r = GLOBE_RADIUS * zoom;
     const cx = width / 2, cy = height / 2;
 
     ctx.save();
-    ctx.shadowColor = "rgba(255, 178, 60, 0.7)";
-    ctx.shadowBlur = 70;
+    ctx.shadowColor = "rgba(255, 214, 150, 0.55)";
+    ctx.shadowBlur = 60;
     ctx.beginPath();
     ctx.arc(cx, cy, r * 0.88, 0, Math.PI * 2);
-    ctx.fillStyle = "#8a4c0f";
+    ctx.fillStyle = "#6b4a1f";
     ctx.fill();
     ctx.restore();
 
@@ -982,10 +1020,10 @@
       cx - r * 0.3, cy - r * 0.3, r * 0.04,
       cx, cy, r
     );
-    grad.addColorStop(0, "rgba(255, 246, 220, 0.92)");
-    grad.addColorStop(0.35, "rgba(250, 182, 76, 0.55)");
-    grad.addColorStop(0.7, "rgba(197, 105, 22, 0.32)");
-    grad.addColorStop(1, "rgba(60, 30, 8, 0.14)");
+    grad.addColorStop(0, "rgba(255, 250, 235, 0.95)");
+    grad.addColorStop(0.35, "rgba(255, 205, 120, 0.55)");
+    grad.addColorStop(0.7, "rgba(205, 135, 45, 0.30)");
+    grad.addColorStop(1, "rgba(45, 28, 12, 0.14)");
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.fillStyle = grad;
@@ -1020,7 +1058,7 @@
           z: GLOBE_RADIUS * Math.sin(theta) * Math.sin(phi0),
         }));
       }
-      ctx.strokeStyle = "rgba(255, 200, 120, 0.22)";
+      ctx.strokeStyle = "rgba(34, 211, 238, 0.22)";
       strokePath(path);
     }
 
@@ -1035,7 +1073,7 @@
           z: GLOBE_RADIUS * Math.sin(theta0) * Math.sin(phi),
         }));
       }
-      ctx.strokeStyle = "rgba(255, 200, 120, 0.16)";
+      ctx.strokeStyle = "rgba(34, 211, 238, 0.14)";
       strokePath(path);
     }
   }
@@ -1118,7 +1156,7 @@
         const pr = projectRotated(rotatePoint(p3));
         path.push({ visible: true, x: pr.x, y: pr.y });
       }
-      ctx.strokeStyle = "rgba(255, 205, 130, 0.3)";
+      ctx.strokeStyle = "rgba(34, 211, 238, 0.3)";
       ctx.lineWidth = 1.2;
       strokePath(path);
     }
@@ -1177,7 +1215,7 @@
 
     if (isSelected || (isMatch && !p.behindGlobe)) {
       ctx.lineWidth = 2;
-      ctx.strokeStyle = isSelected ? "#ffffff" : "#ffd23f";
+      ctx.strokeStyle = isSelected ? "#ffffff" : "#22d3ee";
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
@@ -1186,8 +1224,8 @@
       const label = n.label.length > 40 ? n.label.slice(0, 39) + "…" : n.label;
       ctx.font = "11px system-ui, -apple-system, sans-serif";
       ctx.lineWidth = 3;
-      ctx.strokeStyle = "rgba(13, 13, 13, 0.9)";
-      ctx.fillStyle = "#c3c2b7";
+      ctx.strokeStyle = "rgba(11, 14, 20, 0.9)";
+      ctx.fillStyle = "#8b93a7";
       ctx.textBaseline = "middle";
       const tx = p.x + r + 6;
       ctx.strokeText(label, tx, p.y);
@@ -1195,9 +1233,9 @@
     }
   }
 
-  // A small tinted echo of the main globe's gradient/glow treatment, sized
-  // and positioned per branch - "the main topic of the memory" as its own
-  // little world, with that branch's memories orbiting it.
+  // A Moon: a small tinted echo of the Sun's own gradient/glow treatment,
+  // sized and positioned per branch - "the main topic of the memory" as its
+  // own little world, with that branch's memories orbiting it.
   function drawTopicGlobe(g, rp, pr) {
     const behind = rp.z > 0 && Math.hypot(rp.x, rp.y) < GLOBE_RADIUS;
     const r = g.radius * pr.scale;
@@ -1229,10 +1267,12 @@
     ctx.globalAlpha = 1;
   }
 
-  // A bigger, neutral-toned globe holding several topic globes - the
-  // grand-topic these topics all belong under (e.g. "Mechanics"). Labeled
-  // persistently rather than hover-only: there are only a handful of these,
-  // so naming them up front helps orient the whole scene at a glance.
+  // A Planet: a bigger, neutral-toned globe holding several Moons - the
+  // grand-topic these topics all belong under (e.g. "Mechanics"), with a
+  // tilted ring (drawPlanetRing) to read as a planet rather than a plain
+  // ball. Labeled persistently rather than hover-only: there are only a
+  // handful of these, so naming them up front helps orient the whole scene
+  // at a glance.
   function drawCategoryGlobe(c, rp, pr) {
     const behind = rp.z > 0 && Math.hypot(rp.x, rp.y) < GLOBE_RADIUS;
     const r = c.radius * pr.scale;
@@ -1261,6 +1301,8 @@
     ctx.fillStyle = grad;
     ctx.fill();
 
+    drawPlanetRing(c, pr);
+
     if (!behind) {
       ctx.font = "600 12px system-ui, -apple-system, sans-serif";
       ctx.lineWidth = 3;
@@ -1274,6 +1316,30 @@
     }
 
     ctx.globalAlpha = 1;
+  }
+
+  // A tilted ring around each Planet, seeded per category so the tilt is
+  // stable across reloads - drawn in world space (around the Planet's own
+  // current orbit position, not the scene origin) then rotated/projected
+  // through the same camera as everything else, so it turns with the scene
+  // exactly like the Planet it belongs to.
+  function drawPlanetRing(c, pr) {
+    if (c.radius * pr.scale < 4) return; // too small on screen to be worth it
+    const steps = 48;
+    const ringRadius = c.radius * 1.7;
+    const cosT = Math.cos(c.ringTilt), sinT = Math.sin(c.ringTilt);
+    const path = [];
+    for (let s = 0; s <= steps; s++) {
+      const t = (s / steps) * Math.PI * 2;
+      const flat = { x: ringRadius * Math.cos(t), y: 0, z: ringRadius * Math.sin(t) };
+      const tilted = { x: flat.x, y: flat.y * cosT - flat.z * sinT, z: flat.y * sinT + flat.z * cosT };
+      const world = { x: c.cx + tilted.x, y: c.cy + tilted.y, z: c.cz + tilted.z };
+      const worldPr = projectRotated(rotatePoint(world));
+      path.push({ visible: true, x: worldPr.x, y: worldPr.y });
+    }
+    ctx.strokeStyle = "rgba(34, 211, 238, 0.4)";
+    ctx.lineWidth = 1.3;
+    strokePath(path);
   }
 
   function render() {

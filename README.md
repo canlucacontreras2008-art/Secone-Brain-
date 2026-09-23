@@ -61,23 +61,24 @@ graph, at `/graph`.
 
 ## Memory graph (`/graph`)
 
-A 3D view of everything the brain knows, as a small solar system with three
-nested levels: a glowing golden holographic core in the center - a dense
-wireframe sphere (layered latitude/longitude lines, scattered short "circuit
-trace" arcs, twinkling points, a couple of tilted frame rings) rather than a
-plain ball - orbited by one bigger, neutral-toned **category globe** per
-grand-topic (e.g. "Mechanics", "Coding" - `category`, see above), labeled
-persistently since there are only a handful of these. Inside each category
-globe orbit the smaller **topic globes** for every branch under it (the
-connected component a group of memories belongs to, computed from real
-relationships: a task links to the lesson it produced, and memories link
-when they share the same `topic`), each tinted in that branch's own color.
-A branch with no category at all falls back to orbiting the main globe
-directly, exactly as before this level existed - nothing regresses for old
-or uncategorized data. That branch's own memories then orbit *their* topic
-globe in turn - a hierarchy, not a flat shell - and every level of it drifts
-continuously on its own, independent of camera control. Lessons are green
-and tasks are blue at every level; facts pick up their branch's color.
+A 3D view of everything the brain knows, framed literally as a small solar
+system: a bright **Sun** at the center (a dense wireframe sphere - layered
+latitude/longitude lines, scattered short "circuit trace" arcs, twinkling
+points - warm on its own surface, instrumented with a cool cyan HUD overlay
+of graticule lines and a couple of tilted frame rings, rather than a plain
+ball) orbited by one bigger **Planet** per grand-topic (e.g. "Mechanics",
+"Coding" - `category`, see above), each ringed like Saturn and labeled
+persistently since there are only a handful of these. Orbiting each Planet
+are its **Moons** - the `topic` branches under that category (a connected
+component computed from real relationships: a task links to the lesson it
+produced, and memories link when they share the same `topic`), each tinted
+in that branch's own color. A branch with no category at all falls back to
+orbiting the Sun directly, exactly as before this level existed - nothing
+regresses for old or uncategorized data. That branch's own memories then
+orbit *their* Moon in turn - Sun, Planet, Moon, memory, a real hierarchy,
+not a flat shell - and every level of it drifts continuously on its own,
+independent of camera control. Lessons are green and tasks are blue at
+every level; facts pick up their branch's color.
 
 Old data saved before `category` existed has no category yet, so it stays
 uncategorized (orbiting the main globe directly) until you run
