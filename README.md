@@ -27,8 +27,11 @@ stored as long-term memory it recalls on future work).
   list (`tools.CATEGORIES`) so it can't drift into near-duplicate wording the
   way an open-ended field could. `tags` remain a separate, freeform field for
   search only - neither one affects grouping. Recall is keyword-overlap
-  search - no external vector DB or API key needed to get started; swap in
-  embeddings later if recall quality becomes the bottleneck.
+  search, backed by a SQLite FTS5 index (`db.FTS_SCHEMA`) kept in sync via
+  triggers so it needs no separate cache-invalidation code - no external
+  vector DB or API key needed to get started; swap in embeddings later if
+  recall quality (not speed - FTS5 already keeps this fast at scale) becomes
+  the bottleneck.
 - **Self-improvement loop** - after every `/task` run, the brain asks itself
   "what's the one lesson worth keeping from that?" and stores the answer as a
   `lesson` memory. The next time it works on a similar task, that lesson gets
@@ -344,8 +347,10 @@ real tool-use response shape.
 ## Extending it
 
 - **Better recall** - `memory.recall()` is deliberately simple (token
-  overlap). Swap it for embeddings + a vector index once the memory table
-  grows large enough that keyword matching misses things.
+  overlap, just accelerated by FTS5 rather than replaced - see "How it
+  thinks" above). Swap it for embeddings + a vector index once the *quality*
+  of keyword matching itself, not its speed, becomes the bottleneck (e.g.
+  it misses a paraphrase with no shared words at all).
 - **Scheduled self-study** - call `Brain.learn(topic)` from a cron job to have
   the brain keep a running set of topics current on its own.
 - **Task outcomes** - `run_task` doesn't know if a task actually succeeded

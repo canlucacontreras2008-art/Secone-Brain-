@@ -87,16 +87,27 @@ def list_memories(kind: Optional[str] = None, limit: int = 200) -> List[dict]:
 def recall(query: str, limit: int = 6) -> List[dict]:
     """Keyword-overlap relevance search over stored memories.
 
-    No embeddings or external services - just token overlap between the query
-    and each memory's content/tags. Good enough to bootstrap self-improvement;
-    swap in a vector store later if recall quality becomes the bottleneck.
+    No embeddings or external services - just token overlap between the
+    query and each memory's content/tags/topic/category. Good enough to
+    bootstrap self-improvement; swap in a vector store later if recall
+    quality becomes the bottleneck.
+
+    The FTS5 index (see db.FTS_SCHEMA) narrows the candidates to rows that
+    share at least one query word before any Python tokenizing happens, so
+    a large memory table doesn't mean re-tokenizing every row on every
+    call - the actual scoring below is unchanged, just run over fewer rows.
     """
     query_terms = Counter(_tokenize(query))
     if not query_terms:
         return []
 
+    match_query = " OR ".join(f'"{term}"' for term in query_terms)
     with db.get_conn() as conn:
-        rows = conn.execute("SELECT * FROM memories").fetchall()
+        rows = conn.execute(
+            "SELECT m.* FROM memories AS m JOIN memories_fts ON memories_fts.rowid = m.id "
+            "WHERE memories_fts MATCH ?",
+            (match_query,),
+        ).fetchall()
 
     scored = []
     for row in rows:
