@@ -54,6 +54,12 @@ stored as long-term memory it recalls on future work).
   because a thorough scan can take a while, so you can queue up a batch of
   topics now and work through them (`/queue/run`) at your own pace, without
   one giant blocking request.
+- **Task queue** (`/tasks/queue`) - the same durable-queue pattern as the
+  research queue, but for `/task` instead of `/wikipedia/scan`: queue up
+  task descriptions now, work through them (`/tasks/queue/run`) later, each
+  one running end to end through `run_task()` (tool use, then the usual
+  self-reflection) exactly as if you'd called `/task` directly. Backed by
+  `app/task_queue.py`.
 
 Nothing here is a black box: every fact and lesson the brain has stored is
 visible and editable via `GET /memory` and `POST /memory` - or visually, as a
@@ -125,16 +131,17 @@ server; there's nothing Wikipedia-scan-specific to make work separately.
 `--host 0.0.0.0` makes the API (including everything in memory) reachable
 by any device on that network, not just your phone.
 
-A **Queue** button in the header opens a panel for managing the research
-queue entirely from the browser - no `curl` needed. Add a topic (typed or
-Enter), remove one with its `×`, **Run** to work through everything pending,
-**Stop** to halt after the current topic finishes (it won't abort an
-Anthropic API call mid-conversation, just stop starting new ones). The panel
-polls `GET /queue` every few seconds, so status - a colored dot per item:
-gray pending, pulsing amber running, green done, red error - stays live
-whether the run was started here or via `curl`. A learning progress bar
-along the bottom (`done/total learned`, plus a failed count if any) tracks
-the same data and appears automatically once anything's been queued.
+**Queue** and **Tasks** buttons in the header each open a panel for managing
+their queue entirely from the browser - no `curl` needed. Add an item (typed
+or Enter), remove one with its `×`, **Run** to work through everything
+pending, **Stop** to halt after the current item finishes (it won't abort an
+Anthropic API call mid-conversation, just stop starting new ones). Opening
+one panel closes the other - they share the same corner. Each panel polls
+its own endpoint every few seconds, so status - a colored dot per item: gray
+pending, pulsing cyan running, green done, red error - stays live whether
+the run was started here or via `curl`. A progress bar along the bottom for
+each queue (`done/total`, plus a failed count if any) tracks the same data
+and appears automatically once anything's been queued to it.
 
 It's a single self-contained page (`app/static/graph.html`) - a hand-rolled
 3D projection (rotate, perspective-project, painter's-algorithm depth sort)
@@ -293,6 +300,11 @@ uvicorn app.main:app --reload
 | POST   | `/queue/run` | `?limit=N` (optional)          | Works through pending queue items via `/wikipedia/scan`'s logic. Omit `limit` to drain the whole queue. |
 | POST   | `/queue/stop`| -                               | Signals the running queue to halt after its current topic finishes. |
 | DELETE | `/queue/{id}`| -                               | Removes one queue item by id, any status. |
+| POST   | `/tasks/queue` | `{"descriptions": ["...", "..."]}` | Adds task descriptions to the task queue (status `pending`). |
+| GET    | `/tasks/queue` | `?status=pending\|running\|done\|error` | Lists task queue items and their status. |
+| POST   | `/tasks/queue/run` | `?limit=N` (optional)     | Works through pending task queue items via `run_task()`. Omit `limit` to drain the whole queue. |
+| POST   | `/tasks/queue/stop` | -                        | Signals the running task queue to halt after its current task finishes. |
+| DELETE | `/tasks/queue/{id}` | -                        | Removes one task queue item by id, any status. |
 | GET    | `/memory`    | `?kind=fact\|lesson&limit=100` | Lists stored memories. |
 | POST   | `/memory`    | `{"kind", "content", "topic", "category", "tags"}` | Manually add a memory. `topic` groups it with others on the same subject; `category` (see `tools.CATEGORIES`) nests that topic under a grand-topic globe. |
 | GET    | `/calendar/events` | `?time_min=&time_max=&query=&max_results=20` | Lists calendar events in a range (defaults to now through 7 days out). |
@@ -328,6 +340,13 @@ curl localhost:8000/queue?status=pending
 
 # Process a few at a time (each scan can take a minute or two) - omit ?limit to drain the whole queue
 curl -X POST "localhost:8000/queue/run?limit=3"
+
+# Same pattern for tasks - queue a batch, work through them later
+curl -X POST localhost:8000/tasks/queue \
+  -H 'content-type: application/json' \
+  -d '{"descriptions": ["Summarize today'"'"'s calendar", "Check for unread email from the team"]}'
+
+curl -X POST "localhost:8000/tasks/queue/run?limit=1"
 
 curl localhost:8000/memory?kind=lesson
 ```

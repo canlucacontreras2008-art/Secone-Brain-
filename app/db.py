@@ -32,6 +32,16 @@ CREATE TABLE IF NOT EXISTS research_queue (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     completed_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS task_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    description TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    result TEXT NOT NULL DEFAULT '',
+    task_id INTEGER REFERENCES task_log(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    completed_at TEXT
+);
 """
 
 # recall() used to score every single memory in Python on every call - fine

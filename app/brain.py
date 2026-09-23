@@ -3,7 +3,7 @@ from typing import List, Optional
 
 import anthropic
 
-from . import calendar_tool, config, memory, research_queue, tasks, tools
+from . import calendar_tool, config, memory, research_queue, task_queue, tasks, tools
 
 SYSTEM_PROMPT = """You are Secone, a self-improving AI assistant.
 
@@ -296,5 +296,53 @@ class Brain:
         return {
             "processed": processed,
             "remaining": len(research_queue.list_queue(status="pending")),
+            "stopped": stopped,
+        }
+
+    def run_task_queue(self, limit: Optional[int] = None) -> dict:
+        """Work through the task queue: pop pending task descriptions one at
+        a time and run each end to end via run_task() (including its usual
+        self-reflection). Persisted in SQLite, so queuing tasks and actually
+        running them can happen in separate requests - same reasoning as
+        run_research_queue.
+
+        Checks the stop flag between tasks (not mid-task) - a click on
+        "Stop" lets whatever task is in flight finish, then halts before
+        starting the next one.
+        """
+        task_queue.clear_stop()
+        processed = []
+        count = 0
+        stopped = False
+        while limit is None or count < limit:
+            if task_queue.stop_requested():
+                stopped = True
+                break
+            item = task_queue.next_pending()
+            if item is None:
+                break
+            task_queue.mark_running(item["id"])
+            try:
+                outcome = self.run_task(item["description"])
+                task_queue.mark_done(item["id"], outcome["result"], outcome["task_id"])
+                processed.append(
+                    {
+                        "id": item["id"],
+                        "description": item["description"],
+                        "status": "done",
+                        "task_id": outcome["task_id"],
+                        "result": outcome["result"],
+                    }
+                )
+            except Exception as exc:  # keep the queue moving even if one task fails
+                task_queue.mark_error(item["id"], str(exc))
+                processed.append(
+                    {"id": item["id"], "description": item["description"], "status": "error", "error": str(exc)}
+                )
+            count += 1
+
+        return {
+            "processed": processed,
+            "remaining": len(task_queue.list_queue(status="pending")),
             "stopped": stopped,
         }

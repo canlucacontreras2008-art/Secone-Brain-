@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from . import calendar_tool, db, gmail_tool, graph
 from . import memory as memory_store
-from . import research_queue
+from . import research_queue, task_queue
 from .brain import Brain
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -49,6 +49,10 @@ class WikipediaScanRequest(BaseModel):
 
 class QueueRequest(BaseModel):
     topics: List[str]
+
+
+class TaskQueueRequest(BaseModel):
+    descriptions: List[str]
 
 
 class MemoryIn(BaseModel):
@@ -138,6 +142,33 @@ def stop_queue():
 @app.delete("/queue/{item_id}")
 def delete_queue_item(item_id: int):
     research_queue.delete(item_id)
+    return {"deleted": item_id}
+
+
+@app.post("/tasks/queue")
+def add_to_task_queue(req: TaskQueueRequest):
+    return {"queued": task_queue.enqueue(req.descriptions)}
+
+
+@app.get("/tasks/queue")
+def get_task_queue(status: Optional[str] = None, limit: int = 200):
+    return task_queue.list_queue(status=status, limit=limit)
+
+
+@app.post("/tasks/queue/run")
+def run_task_queue_endpoint(limit: Optional[int] = None):
+    return brain.run_task_queue(limit=limit)
+
+
+@app.post("/tasks/queue/stop")
+def stop_task_queue():
+    task_queue.request_stop()
+    return {"stopped": True}
+
+
+@app.delete("/tasks/queue/{item_id}")
+def delete_task_queue_item(item_id: int):
+    task_queue.delete(item_id)
     return {"deleted": item_id}
 
 
