@@ -1,5 +1,3 @@
-import pytest
-
 from app import calendar_tool, config
 
 
@@ -134,10 +132,3 @@ def test_delete_event_calls_delete_with_the_event_id():
     calendar_tool.delete_event("abc123", service=FakeService(api))
 
     assert api.calls[0] == ("delete", {"calendarId": config.GOOGLE_CALENDAR_ID, "eventId": "abc123"})
-
-
-def test_get_service_raises_a_clear_error_when_not_yet_authorized(monkeypatch, tmp_path):
-    monkeypatch.setattr(config, "GOOGLE_CALENDAR_TOKEN_PATH", str(tmp_path / "no-such-token.json"))
-
-    with pytest.raises(RuntimeError, match="gcal_auth.py"):
-        calendar_tool.get_service()

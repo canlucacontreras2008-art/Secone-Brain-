@@ -3,7 +3,7 @@ import tempfile
 
 import pytest
 
-from app import calendar_tool, config, db, research_queue, tools
+from app import calendar_tool, config, db, gmail_tool, research_queue, tools
 
 
 @pytest.fixture(autouse=True)
@@ -120,3 +120,94 @@ def test_calendar_delete_event_dispatch_calls_through(monkeypatch):
 
     assert captured["event_id"] == "e1"
     assert "Deleted event e1" in result
+
+
+def test_gmail_tools_are_available_in_chat_but_not_wikipedia_scans():
+    all_tool_names = {t["name"] for t in tools.ALL_TOOLS}
+    wikipedia_tool_names = {t["name"] for t in tools.WIKIPEDIA_TOOLS}
+    gmail_names = {
+        "gmail_list_messages",
+        "gmail_read_message",
+        "gmail_create_draft",
+        "gmail_send_message",
+    }
+
+    assert gmail_names <= all_tool_names
+    assert not (gmail_names & wikipedia_tool_names)
+
+
+def test_gmail_list_messages_dispatch_formats_messages(monkeypatch):
+    monkeypatch.setattr(
+        gmail_tool,
+        "list_messages",
+        lambda **kwargs: [
+            {"id": "m1", "subject": "Hello", "from": "a@b.com", "date": "Mon", "snippet": "Hi there"}
+        ],
+    )
+
+    result = tools.execute_tool("gmail_list_messages", {"query": "is:unread"})
+
+    assert "[m1] Hello" in result
+    assert "a@b.com" in result
+
+
+def test_gmail_list_messages_dispatch_reports_no_messages(monkeypatch):
+    monkeypatch.setattr(gmail_tool, "list_messages", lambda **kwargs: [])
+
+    result = tools.execute_tool("gmail_list_messages", {})
+
+    assert result == "No messages found."
+
+
+def test_gmail_read_message_dispatch_formats_the_message(monkeypatch):
+    monkeypatch.setattr(
+        gmail_tool,
+        "get_message",
+        lambda message_id: {
+            "id": message_id, "subject": "Hello", "from": "a@b.com", "to": "me@example.com",
+            "date": "Mon", "body": "Hello there.",
+        },
+    )
+
+    result = tools.execute_tool("gmail_read_message", {"message_id": "m1"})
+
+    assert "Subject: Hello" in result
+    assert "Hello there." in result
+
+
+def test_gmail_create_draft_dispatch_never_sends(monkeypatch):
+    captured = {}
+
+    def fake_create_draft(**kwargs):
+        captured.update(kwargs)
+        return {"id": "d1", "to": kwargs["to"], "subject": kwargs["subject"]}
+
+    monkeypatch.setattr(gmail_tool, "create_draft", fake_create_draft)
+    # gmail_send_message must never be touched by a draft dispatch.
+    monkeypatch.setattr(
+        gmail_tool, "send_message", lambda **kwargs: pytest.fail("create_draft must not send")
+    )
+
+    result = tools.execute_tool(
+        "gmail_create_draft", {"to": "a@b.com", "subject": "Hi", "body": "Hello there"}
+    )
+
+    assert captured["to"] == "a@b.com"
+    assert "Created draft [d1]" in result
+
+
+def test_gmail_send_message_dispatch_calls_through(monkeypatch):
+    captured = {}
+
+    def fake_send_message(**kwargs):
+        captured.update(kwargs)
+        return {"id": "s1", "to": kwargs["to"], "subject": kwargs["subject"]}
+
+    monkeypatch.setattr(gmail_tool, "send_message", fake_send_message)
+
+    result = tools.execute_tool(
+        "gmail_send_message", {"to": "a@b.com", "subject": "Hi", "body": "Hello there"}
+    )
+
+    assert captured["to"] == "a@b.com"
+    assert "Sent message [s1]" in result

@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from . import calendar_tool, db, graph
+from . import calendar_tool, db, gmail_tool, graph
 from . import memory as memory_store
 from . import research_queue
 from .brain import Brain
@@ -80,6 +80,13 @@ class CalendarEventUpdate(BaseModel):
     end: Optional[str] = None
     description: Optional[str] = None
     location: Optional[str] = None
+
+
+class EmailIn(BaseModel):
+    to: str
+    subject: str
+    body: str
+    cc: str = ""
 
 
 @app.get("/health")
@@ -200,6 +207,38 @@ def delete_calendar_event(event_id: str):
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return {"deleted": event_id}
+
+
+@app.get("/gmail/messages")
+def list_gmail_messages(query: Optional[str] = None, max_results: int = 10):
+    try:
+        return gmail_tool.list_messages(query=query, max_results=max_results)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/gmail/messages/{message_id}")
+def read_gmail_message(message_id: str):
+    try:
+        return gmail_tool.get_message(message_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/gmail/drafts")
+def create_gmail_draft(email: EmailIn):
+    try:
+        return gmail_tool.create_draft(**email.model_dump())
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/gmail/send")
+def send_gmail_message(email: EmailIn):
+    try:
+        return gmail_tool.send_message(**email.model_dump())
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @app.get("/graph")

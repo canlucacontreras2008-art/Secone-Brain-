@@ -1,4 +1,4 @@
-from . import calendar_tool, memory, research_queue
+from . import calendar_tool, gmail_tool, memory, research_queue
 
 # Server tools - run on Anthropic's infrastructure, no local execution needed.
 WEB_SEARCH_TOOL = {
@@ -228,9 +228,81 @@ CALENDAR_DELETE_EVENT_TOOL = {
     },
 }
 
+GMAIL_LIST_MESSAGES_TOOL = {
+    "name": "gmail_list_messages",
+    "description": (
+        "Search/list the user's Gmail messages. Use Gmail's own search syntax "
+        "in `query` (e.g. \"is:unread\", \"from:someone@example.com\", "
+        "\"subject:invoice\"). Omit query to list the most recent messages."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "Gmail search query. Optional."},
+            "max_results": {"type": "integer", "description": "Defaults to 10."},
+        },
+        "required": [],
+        "additionalProperties": False,
+    },
+}
+
+GMAIL_READ_MESSAGE_TOOL = {
+    "name": "gmail_read_message",
+    "description": "Read the full content of one Gmail message by id (from gmail_list_messages).",
+    "input_schema": {
+        "type": "object",
+        "properties": {"message_id": {"type": "string"}},
+        "required": ["message_id"],
+        "additionalProperties": False,
+    },
+}
+
+GMAIL_CREATE_DRAFT_TOOL = {
+    "name": "gmail_create_draft",
+    "description": (
+        "Create a draft email in the user's Gmail - saved for them to review "
+        "and send themselves, nothing is sent yet. Prefer this over "
+        "gmail_send_message whenever there's any doubt about whether the "
+        "user wants it sent immediately."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "to": {"type": "string", "description": "Recipient email address."},
+            "subject": {"type": "string"},
+            "body": {"type": "string"},
+            "cc": {"type": "string", "description": "Optional CC address(es), comma-separated."},
+        },
+        "required": ["to", "subject", "body"],
+        "additionalProperties": False,
+    },
+}
+
+GMAIL_SEND_MESSAGE_TOOL = {
+    "name": "gmail_send_message",
+    "description": (
+        "Immediately send an email from the user's Gmail account - this "
+        "cannot be undone once sent. Only call this when the user has "
+        "explicitly said to send it (not just draft, write, or prepare an "
+        "email) - if there's any doubt, use gmail_create_draft instead and "
+        "let the user review and send it themselves."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "to": {"type": "string"},
+            "subject": {"type": "string"},
+            "body": {"type": "string"},
+            "cc": {"type": "string", "description": "Optional CC address(es), comma-separated."},
+        },
+        "required": ["to", "subject", "body"],
+        "additionalProperties": False,
+    },
+}
+
 # Not included in WIKIPEDIA_TOOLS - a scan already IS the research, so letting
 # it queue more research on itself risks a self-referential spiral. Calendar
-# tools aren't relevant to a Wikipedia scan either.
+# and Gmail tools aren't relevant to a Wikipedia scan either.
 ALL_TOOLS = [
     WEB_SEARCH_TOOL,
     REMEMBER_TOOL,
@@ -240,6 +312,10 @@ ALL_TOOLS = [
     CALENDAR_CREATE_EVENT_TOOL,
     CALENDAR_UPDATE_EVENT_TOOL,
     CALENDAR_DELETE_EVENT_TOOL,
+    GMAIL_LIST_MESSAGES_TOOL,
+    GMAIL_READ_MESSAGE_TOOL,
+    GMAIL_CREATE_DRAFT_TOOL,
+    GMAIL_SEND_MESSAGE_TOOL,
 ]
 WIKIPEDIA_TOOLS = [WIKIPEDIA_SEARCH_TOOL, WIKIPEDIA_FETCH_TOOL, REMEMBER_TOOL]
 
@@ -308,5 +384,42 @@ def execute_tool(name: str, tool_input: dict, default_topic: str = "") -> str:
     if name == "calendar_delete_event":
         calendar_tool.delete_event(tool_input["event_id"])
         return f"Deleted event {tool_input['event_id']}."
+
+    if name == "gmail_list_messages":
+        kwargs = {"query": tool_input.get("query")}
+        if "max_results" in tool_input:
+            kwargs["max_results"] = tool_input["max_results"]
+        messages = gmail_tool.list_messages(**kwargs)
+        if not messages:
+            return "No messages found."
+        return "\n".join(
+            f"- [{m['id']}] {m['subject']} - from {m['from']} ({m['date']}): {m['snippet']}"
+            for m in messages
+        )
+
+    if name == "gmail_read_message":
+        msg = gmail_tool.get_message(tool_input["message_id"])
+        return (
+            f"From: {msg['from']}\nTo: {msg['to']}\nDate: {msg['date']}\n"
+            f"Subject: {msg['subject']}\n\n{msg['body']}"
+        )
+
+    if name == "gmail_create_draft":
+        draft = gmail_tool.create_draft(
+            to=tool_input["to"],
+            subject=tool_input["subject"],
+            body=tool_input["body"],
+            cc=tool_input.get("cc", ""),
+        )
+        return f"Created draft [{draft['id']}] to {draft['to']}: \"{draft['subject']}\"."
+
+    if name == "gmail_send_message":
+        sent = gmail_tool.send_message(
+            to=tool_input["to"],
+            subject=tool_input["subject"],
+            body=tool_input["body"],
+            cc=tool_input.get("cc", ""),
+        )
+        return f"Sent message [{sent['id']}] to {sent['to']}: \"{sent['subject']}\"."
 
     raise ValueError(f"Unknown client tool: {name}")

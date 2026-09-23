@@ -16,17 +16,17 @@ if not exist ".venv\Scripts\activate.bat" (
 call .venv\Scripts\activate.bat
 
 if not exist "credentials.json" (
-    echo credentials.json is missing - see README.md, "Calendar" section, to get it.
-    echo Starting the server without calendar access for now...
+    echo credentials.json is missing - see README.md, "Calendar"/"Gmail" sections, to get it.
+    echo Starting the server without Calendar/Gmail access for now...
     goto :start_server
 )
 
 if not exist "token.json" (
-    echo No Google Calendar token yet - opening your browser once to connect it...
-    python scripts\gcal_auth.py
+    echo No Google token yet - opening your browser once to connect Calendar + Gmail...
+    python scripts\google_auth.py
     if errorlevel 1 (
-        echo Calendar setup didn't finish - starting the server anyway. Run
-        echo "python scripts\gcal_auth.py" by hand later to try again.
+        echo Google setup didn't finish - starting the server anyway. Run
+        echo "python scripts\google_auth.py" by hand later to try again.
     )
 )
 

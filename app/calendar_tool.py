@@ -1,24 +1,13 @@
 """Google Calendar access for the brain's calendar tools (see tools.py).
 
-Auth is a one-time, out-of-band step: run `python scripts/gcal_auth.py`
-once, interactively, to grant access and save a refresh token to
-GOOGLE_CALENDAR_TOKEN_PATH. Everything here only ever reads and silently
-refreshes that saved token - it never opens a browser itself, since a
-server process (or a phone) has no interactive session to do that in.
+Auth is shared with Gmail - see app/google_auth.py.
 """
 
-import os
 from datetime import datetime, timedelta
 from typing import List, Optional
 from zoneinfo import ZoneInfo
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
-
-from . import config
-
-SCOPES = ["https://www.googleapis.com/auth/calendar"]
+from . import config, google_auth
 
 
 def timezone_name() -> Optional[str]:
@@ -31,19 +20,7 @@ def now() -> datetime:
 
 
 def get_service():
-    token_path = config.GOOGLE_CALENDAR_TOKEN_PATH
-    if not os.path.exists(token_path):
-        raise RuntimeError(
-            f"No Google Calendar token at {token_path} - run "
-            "`python scripts/gcal_auth.py` once to connect your calendar "
-            "(see README \"Calendar\" section)."
-        )
-    creds = Credentials.from_authorized_user_file(token_path, SCOPES)
-    if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        with open(token_path, "w") as f:
-            f.write(creds.to_json())
-    return build("calendar", "v3", credentials=creds)
+    return google_auth.get_service("calendar", "v3")
 
 
 def _time_dict(value: str) -> dict:
