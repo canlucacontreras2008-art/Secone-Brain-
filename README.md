@@ -7,9 +7,10 @@ stored as long-term memory it recalls on future work).
 ## How it thinks
 
 - **`app/brain.py`** - the agentic loop. Every chat or task request runs
-  Claude in a tool-use loop with four tools: `web_search` (a server-side
-  tool, so it's real live internet access, not training data), `remember`,
-  `recall`, and `queue_for_learning` - the model calls this itself when it
+  Claude in a tool-use loop with `web_search` (a server-side tool, so it's
+  real live internet access, not training data), `remember`, `recall`,
+  `queue_for_learning`, and four Google Calendar tools (see "Calendar"
+  below). `queue_for_learning` - the model calls this itself when it
   notices a real gap in what it knows, adding that topic to the research
   queue (see below) instead of just guessing. It's the same queue the
   **Voice Chat** page and the graph's Queue panel both show, so a gap
@@ -160,6 +161,61 @@ call `queue_for_learning` on its own (see "How it thinks" above) to add
 that topic to the research queue - check the Queue panel on the Memory
 Graph page to see it show up and run it.
 
+## Calendar
+
+The brain can read, create, update, and delete events on your real Google
+Calendar - through chat, a task, or Voice Chat ("what's on my schedule
+tomorrow?", "schedule a dentist appointment Friday at 2pm"), or directly via
+the `/calendar/events` endpoints below.
+
+It only ever does this because you asked in the moment - it never touches
+your calendar proactively - and it's given the current date and time in every
+chat/task so it can resolve "tomorrow" or "next Tuesday" correctly. Before
+changing or deleting an event, it looks it up first via
+`calendar_list_events` rather than guessing an id.
+
+### One-time setup
+
+Google requires you to create your own OAuth credentials - there's no way
+around this step, and no default/shared credentials would be safe to ship in
+a public repo anyway.
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/), create
+   a project (or pick an existing one).
+2. **APIs & Services -> Library** - search for "Google Calendar API" and
+   enable it.
+3. **APIs & Services -> OAuth consent screen** - choose **External**, fill in
+   the required fields (app name, your email), and add your own Google
+   account as a **test user**. Leaving the app in "Testing" mode is fine for
+   personal use - no Google review needed, it just means only accounts you
+   list as test users can authorize it.
+4. **APIs & Services -> Credentials -> Create Credentials -> OAuth client
+   ID**. Application type: **Desktop app**. Download the resulting JSON and
+   save it as `credentials.json` in the project root.
+5. Run the one-time interactive authorization:
+   ```bash
+   python scripts/gcal_auth.py
+   ```
+   This opens your browser, you sign in and approve access, and it saves a
+   `token.json` locally. The server reads and silently refreshes that token
+   from then on - you only run this script again if you delete `token.json`
+   or revoke access.
+
+**Never commit `credentials.json` or `token.json`** - both are already in
+`.gitignore`. `credentials.json` identifies your OAuth app; `token.json` is
+an active credential for your real calendar - treat it like a password.
+
+By default this uses your **primary** calendar and resolves relative dates
+against the server's own local timezone. Override either in `.env`:
+```
+GOOGLE_CALENDAR_ID=primary
+BRAIN_TIMEZONE=America/New_York
+```
+`BRAIN_TIMEZONE` matters if the server runs somewhere (e.g. a cloud box)
+whose local timezone isn't yours - set it to your own [IANA timezone
+name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) so
+"tomorrow" means tomorrow in *your* timezone, not the server's.
+
 ## Setup
 
 ```bash
@@ -188,6 +244,10 @@ uvicorn app.main:app --reload
 | DELETE | `/queue/{id}`| -                               | Removes one queue item by id, any status. |
 | GET    | `/memory`    | `?kind=fact\|lesson&limit=100` | Lists stored memories. |
 | POST   | `/memory`    | `{"kind", "content", "topic", "category", "tags"}` | Manually add a memory. `topic` groups it with others on the same subject; `category` (see `tools.CATEGORIES`) nests that topic under a grand-topic globe. |
+| GET    | `/calendar/events` | `?time_min=&time_max=&query=&max_results=20` | Lists calendar events in a range (defaults to now through 7 days out). |
+| POST   | `/calendar/events` | `{"summary", "start", "end", "description", "location"}` | Creates an event. `start`/`end` are RFC3339 datetimes, or plain `"YYYY-MM-DD"` for an all-day event. |
+| PATCH  | `/calendar/events/{id}` | any subset of the fields above | Updates only the fields provided. |
+| DELETE | `/calendar/events/{id}` | -                         | Deletes an event. |
 | GET    | `/graph`     | -                               | The memory graph UI (open in a browser). |
 | GET    | `/graph/data`| -                               | `{nodes, edges}` JSON backing the graph UI. |
 | GET    | `/voice`     | -                               | The voice chat UI (open in a browser). |

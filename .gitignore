@@ -5,3 +5,5 @@ venv/
 .env
 *.db
 .pytest_cache/
+credentials.json
+token.json

@@ -3,7 +3,7 @@ import tempfile
 
 import pytest
 
-from app import config, db, research_queue, tools
+from app import calendar_tool, config, db, research_queue, tools
 
 
 @pytest.fixture(autouse=True)
@@ -37,3 +37,86 @@ def test_queue_for_learning_is_available_in_chat_but_not_wikipedia_scans():
 def test_unknown_tool_still_raises():
     with pytest.raises(ValueError):
         tools.execute_tool("not_a_real_tool", {})
+
+
+def test_calendar_tools_are_available_in_chat_but_not_wikipedia_scans():
+    all_tool_names = {t["name"] for t in tools.ALL_TOOLS}
+    wikipedia_tool_names = {t["name"] for t in tools.WIKIPEDIA_TOOLS}
+    calendar_names = {
+        "calendar_list_events",
+        "calendar_create_event",
+        "calendar_update_event",
+        "calendar_delete_event",
+    }
+
+    assert calendar_names <= all_tool_names
+    assert not (calendar_names & wikipedia_tool_names)
+
+
+def test_calendar_list_events_dispatch_formats_events(monkeypatch):
+    monkeypatch.setattr(
+        calendar_tool,
+        "list_events",
+        lambda **kwargs: [
+            {"id": "e1", "summary": "Dentist", "start": "2026-09-24T15:00:00-07:00",
+             "end": "2026-09-24T16:00:00-07:00", "location": "Main St", "description": ""}
+        ],
+    )
+
+    result = tools.execute_tool("calendar_list_events", {"query": "dentist"})
+
+    assert "[e1] Dentist" in result
+    assert "@ Main St" in result
+
+
+def test_calendar_list_events_dispatch_reports_no_events(monkeypatch):
+    monkeypatch.setattr(calendar_tool, "list_events", lambda **kwargs: [])
+
+    result = tools.execute_tool("calendar_list_events", {})
+
+    assert result == "No events found in that range."
+
+
+def test_calendar_create_event_dispatch_calls_through(monkeypatch):
+    captured = {}
+
+    def fake_create_event(**kwargs):
+        captured.update(kwargs)
+        return {"id": "new1", "summary": kwargs["summary"], "start": kwargs["start"], "end": kwargs["end"]}
+
+    monkeypatch.setattr(calendar_tool, "create_event", fake_create_event)
+
+    result = tools.execute_tool(
+        "calendar_create_event",
+        {"summary": "Dentist", "start": "2026-09-24T15:00:00-07:00", "end": "2026-09-24T16:00:00-07:00"},
+    )
+
+    assert captured["summary"] == "Dentist"
+    assert "Created event [new1]" in result
+
+
+def test_calendar_update_event_dispatch_excludes_event_id_from_fields(monkeypatch):
+    captured = {}
+
+    def fake_update_event(event_id, **fields):
+        captured["event_id"] = event_id
+        captured["fields"] = fields
+        return {"id": event_id, "summary": fields.get("summary", "Dentist")}
+
+    monkeypatch.setattr(calendar_tool, "update_event", fake_update_event)
+
+    result = tools.execute_tool("calendar_update_event", {"event_id": "e1", "summary": "Dentist (moved)"})
+
+    assert captured["event_id"] == "e1"
+    assert captured["fields"] == {"summary": "Dentist (moved)"}
+    assert "Updated event [e1]" in result
+
+
+def test_calendar_delete_event_dispatch_calls_through(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(calendar_tool, "delete_event", lambda event_id: captured.setdefault("event_id", event_id))
+
+    result = tools.execute_tool("calendar_delete_event", {"event_id": "e1"})
+
+    assert captured["event_id"] == "e1"
+    assert "Deleted event e1" in result

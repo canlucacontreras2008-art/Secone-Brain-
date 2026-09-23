@@ -3,17 +3,20 @@ from typing import List, Optional
 
 import anthropic
 
-from . import config, memory, research_queue, tasks, tools
+from . import calendar_tool, config, memory, research_queue, tasks, tools
 
 SYSTEM_PROMPT = """You are Secone, a self-improving AI assistant.
 
-You have four abilities beyond a normal chat model:
+You have five abilities beyond a normal chat model:
 1. `web_search` - look things up on the live internet when your own knowledge
    might be stale, wrong, or missing.
 2. `remember` - save durable facts and lessons to your own long-term memory.
 3. `recall` - search that memory for anything relevant to what you're doing now.
 4. `queue_for_learning` - queue a topic for later, deeper research when you
    notice a real gap in what you know.
+5. Google Calendar tools (`calendar_list_events`, `calendar_create_event`,
+   `calendar_update_event`, `calendar_delete_event`) - read and manage the
+   user's real calendar.
 
 Use `remember` proactively: when you learn something true about the world via
 web_search, when the user tells you something about themselves or their
@@ -33,6 +36,12 @@ don't have enough confident knowledge about - not for every unfamiliar word,
 just a real gap - so you can research it properly later instead of guessing
 now. This doesn't replace answering the user as best you can in the moment;
 it's in addition to that.
+
+Only create, change, or delete a calendar event when the user has clearly
+asked you to - never proactively, and never guess which existing event they
+mean without checking `calendar_list_events` first. You're given the current
+date and time below; resolve relative dates ("tomorrow", "next Tuesday")
+against that before calling a calendar tool, rather than guessing.
 """
 
 
@@ -46,6 +55,10 @@ class Brain:
             return ""
         lines = [f"- ({h['kind']}) {h['content']}" for h in hits]
         return "Relevant things you already know:\n" + "\n".join(lines)
+
+    def _current_time_block(self) -> str:
+        now = calendar_tool.now()
+        return f"Current date and time: {now.strftime('%A, %Y-%m-%d %H:%M %Z').strip()} (RFC3339: {now.isoformat()})."
 
     def _run_loop(
         self,
@@ -101,8 +114,9 @@ class Brain:
 
     def chat(self, user_message: str) -> str:
         memories_block = self._relevant_memories_block(user_message)
+        extra_system = "\n\n".join(part for part in (self._current_time_block(), memories_block) if part)
         messages = [{"role": "user", "content": user_message}]
-        return self._run_loop(messages, extra_system=memories_block)
+        return self._run_loop(messages, extra_system=extra_system)
 
     def run_task(self, task_description: str) -> dict:
         memories_block = self._relevant_memories_block(task_description)
@@ -111,7 +125,9 @@ class Brain:
             "using your tools, then give a clear final report of what you did and "
             "the outcome."
         )
-        extra_system = "\n\n".join(part for part in (memories_block, task_system) if part)
+        extra_system = "\n\n".join(
+            part for part in (self._current_time_block(), memories_block, task_system) if part
+        )
 
         messages = [{"role": "user", "content": task_description}]
         result = self._run_loop(messages, extra_system=extra_system)

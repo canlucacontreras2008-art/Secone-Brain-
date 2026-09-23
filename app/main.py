@@ -1,11 +1,11 @@
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from . import db, graph
+from . import calendar_tool, db, graph
 from . import memory as memory_store
 from . import research_queue
 from .brain import Brain
@@ -57,6 +57,22 @@ class MemoryIn(BaseModel):
     topic: str = ""
     category: str = ""
     tags: List[str] = []
+
+
+class CalendarEventIn(BaseModel):
+    summary: str
+    start: str
+    end: str
+    description: str = ""
+    location: str = ""
+
+
+class CalendarEventUpdate(BaseModel):
+    summary: Optional[str] = None
+    start: Optional[str] = None
+    end: Optional[str] = None
+    description: Optional[str] = None
+    location: Optional[str] = None
 
 
 @app.get("/health")
@@ -122,6 +138,47 @@ def add_memory(item: MemoryIn):
         item.kind, item.content, item.tags, source="manual", topic=item.topic, category=item.category
     )
     return {"id": memory_id}
+
+
+@app.get("/calendar/events")
+def list_calendar_events(
+    time_min: Optional[str] = None,
+    time_max: Optional[str] = None,
+    query: Optional[str] = None,
+    max_results: int = 20,
+):
+    try:
+        return calendar_tool.list_events(
+            time_min=time_min, time_max=time_max, query=query, max_results=max_results
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/calendar/events")
+def create_calendar_event(event: CalendarEventIn):
+    try:
+        return calendar_tool.create_event(**event.model_dump())
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.patch("/calendar/events/{event_id}")
+def update_calendar_event(event_id: str, event: CalendarEventUpdate):
+    fields = {k: v for k, v in event.model_dump().items() if v is not None}
+    try:
+        return calendar_tool.update_event(event_id, **fields)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.delete("/calendar/events/{event_id}")
+def delete_calendar_event(event_id: str):
+    try:
+        calendar_tool.delete_event(event_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"deleted": event_id}
 
 
 @app.get("/graph")

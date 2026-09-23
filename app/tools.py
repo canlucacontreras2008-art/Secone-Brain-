@@ -1,4 +1,4 @@
-from . import memory, research_queue
+from . import calendar_tool, memory, research_queue
 
 # Server tools - run on Anthropic's infrastructure, no local execution needed.
 WEB_SEARCH_TOOL = {
@@ -130,9 +130,117 @@ QUEUE_LEARNING_TOOL = {
     },
 }
 
+CALENDAR_LIST_EVENTS_TOOL = {
+    "name": "calendar_list_events",
+    "description": (
+        "List events on the user's Google Calendar in a time range - use this "
+        "to answer questions about their schedule (e.g. \"what do I have "
+        "tomorrow\", \"am I free Friday afternoon\"). You're given the current "
+        "date and time in context; resolve relative dates against that before "
+        "calling this."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "time_min": {
+                "type": "string",
+                "description": "RFC3339 start of the range, e.g. \"2026-09-24T00:00:00-07:00\". Omit for now.",
+            },
+            "time_max": {
+                "type": "string",
+                "description": "RFC3339 end of the range. Omit for 7 days after time_min.",
+            },
+            "query": {
+                "type": "string",
+                "description": "Optional free-text filter on event title/description.",
+            },
+        },
+        "required": [],
+        "additionalProperties": False,
+    },
+}
+
+CALENDAR_CREATE_EVENT_TOOL = {
+    "name": "calendar_create_event",
+    "description": (
+        "Create a new event on the user's Google Calendar. Only do this when "
+        "the user has clearly asked you to schedule or add something - never "
+        "proactively. Resolve relative dates (\"tomorrow\", \"next Tuesday\") "
+        "against the current date/time given in context into an actual "
+        "RFC3339 timestamp before calling this."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "summary": {"type": "string", "description": "The event's title."},
+            "start": {
+                "type": "string",
+                "description": (
+                    "RFC3339 datetime (e.g. \"2026-09-24T15:00:00-07:00\"), or a "
+                    "plain date (\"2026-09-24\") for an all-day event."
+                ),
+            },
+            "end": {"type": "string", "description": "Same format as start."},
+            "description": {"type": "string", "description": "Optional longer notes."},
+            "location": {"type": "string", "description": "Optional location."},
+        },
+        "required": ["summary", "start", "end"],
+        "additionalProperties": False,
+    },
+}
+
+CALENDAR_UPDATE_EVENT_TOOL = {
+    "name": "calendar_update_event",
+    "description": (
+        "Update an existing event on the user's Google Calendar - only the "
+        "fields you provide are changed. Find the event_id first via "
+        "calendar_list_events. Only do this when the user has clearly asked "
+        "you to change something."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "event_id": {"type": "string"},
+            "summary": {"type": "string"},
+            "start": {"type": "string", "description": "RFC3339 datetime, or a plain date for an all-day event."},
+            "end": {"type": "string", "description": "Same format as start."},
+            "description": {"type": "string"},
+            "location": {"type": "string"},
+        },
+        "required": ["event_id"],
+        "additionalProperties": False,
+    },
+}
+
+CALENDAR_DELETE_EVENT_TOOL = {
+    "name": "calendar_delete_event",
+    "description": (
+        "Delete/cancel an event on the user's Google Calendar. Find the "
+        "event_id first via calendar_list_events. Only do this when the user "
+        "has clearly asked you to cancel or remove something - it can't be "
+        "undone from here."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {"event_id": {"type": "string"}},
+        "required": ["event_id"],
+        "additionalProperties": False,
+    },
+}
+
 # Not included in WIKIPEDIA_TOOLS - a scan already IS the research, so letting
-# it queue more research on itself risks a self-referential spiral.
-ALL_TOOLS = [WEB_SEARCH_TOOL, REMEMBER_TOOL, RECALL_TOOL, QUEUE_LEARNING_TOOL]
+# it queue more research on itself risks a self-referential spiral. Calendar
+# tools aren't relevant to a Wikipedia scan either.
+ALL_TOOLS = [
+    WEB_SEARCH_TOOL,
+    REMEMBER_TOOL,
+    RECALL_TOOL,
+    QUEUE_LEARNING_TOOL,
+    CALENDAR_LIST_EVENTS_TOOL,
+    CALENDAR_CREATE_EVENT_TOOL,
+    CALENDAR_UPDATE_EVENT_TOOL,
+    CALENDAR_DELETE_EVENT_TOOL,
+]
 WIKIPEDIA_TOOLS = [WIKIPEDIA_SEARCH_TOOL, WIKIPEDIA_FETCH_TOOL, REMEMBER_TOOL]
 
 
@@ -165,5 +273,40 @@ def execute_tool(name: str, tool_input: dict, default_topic: str = "") -> str:
         topic = tool_input["topic"]
         research_queue.enqueue([topic])
         return f'Queued "{topic}" for learning.'
+
+    if name == "calendar_list_events":
+        events = calendar_tool.list_events(
+            time_min=tool_input.get("time_min"),
+            time_max=tool_input.get("time_max"),
+            query=tool_input.get("query"),
+        )
+        if not events:
+            return "No events found in that range."
+        lines = []
+        for e in events:
+            line = f"- [{e['id']}] {e['summary']}: {e['start']} to {e['end']}"
+            if e["location"]:
+                line += f" @ {e['location']}"
+            lines.append(line)
+        return "\n".join(lines)
+
+    if name == "calendar_create_event":
+        event = calendar_tool.create_event(
+            summary=tool_input["summary"],
+            start=tool_input["start"],
+            end=tool_input["end"],
+            description=tool_input.get("description", ""),
+            location=tool_input.get("location", ""),
+        )
+        return f"Created event [{event['id']}] \"{event['summary']}\" from {event['start']} to {event['end']}."
+
+    if name == "calendar_update_event":
+        fields = {k: v for k, v in tool_input.items() if k != "event_id"}
+        event = calendar_tool.update_event(tool_input["event_id"], **fields)
+        return f"Updated event [{event['id']}] \"{event['summary']}\"."
+
+    if name == "calendar_delete_event":
+        calendar_tool.delete_event(tool_input["event_id"])
+        return f"Deleted event {tool_input['event_id']}."
 
     raise ValueError(f"Unknown client tool: {name}")
