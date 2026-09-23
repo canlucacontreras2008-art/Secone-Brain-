@@ -18,12 +18,14 @@ def add_memory(
     source: str = "manual",
     task_id: Optional[int] = None,
     topic: str = "",
+    category: str = "",
 ) -> int:
     tag_str = ",".join(tags or [])
     with db.get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO memories (kind, content, tags, topic, source, task_id) VALUES (?, ?, ?, ?, ?, ?)",
-            (kind, content, tag_str, topic, source, task_id),
+            "INSERT INTO memories (kind, content, tags, topic, category, source, task_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (kind, content, tag_str, topic, category, source, task_id),
         )
         return cur.lastrowid
 
@@ -58,7 +60,9 @@ def recall(query: str, limit: int = 6) -> List[dict]:
 
     scored = []
     for row in rows:
-        haystack = Counter(_tokenize(row["content"] + " " + row["tags"] + " " + row["topic"]))
+        haystack = Counter(
+            _tokenize(row["content"] + " " + row["tags"] + " " + row["topic"] + " " + row["category"])
+        )
         score = sum((haystack & query_terms).values())
         if score > 0:
             scored.append((score, dict(row)))

@@ -12,14 +12,17 @@ stored as long-term memory it recalls on future work).
   and `recall`.
 - **`app/memory.py` + `app/db.py`** - long-term memory, backed by SQLite.
   Every memory is a `fact` (something true about the world or the user) or a
-  `lesson` (something learned about how to do a task well), plus an
-  authoritative `topic` field - the general subject it's about, set by the
-  model on every `remember` call (see `tools.REMEMBER_TOOL`) and used to
-  group related memories together (see the graph below). `tags` remain a
-  separate, freeform field for search only - they don't affect grouping.
-  Recall is keyword-overlap search - no external vector DB or API key needed
-  to get started; swap in embeddings later if recall quality becomes the
-  bottleneck.
+  `lesson` (something learned about how to do a task well), plus two
+  authoritative grouping fields the model sets on every `remember` call (see
+  `tools.REMEMBER_TOOL`): `topic` - the specific subject, freeform but meant
+  to be reused verbatim across memories about the same subject - and
+  `category` - the broader grand-topic that subject belongs under (e.g.
+  "Gear" the topic sits under "Mechanics" the category), picked from a fixed
+  list (`tools.CATEGORIES`) so it can't drift into near-duplicate wording the
+  way an open-ended field could. `tags` remain a separate, freeform field for
+  search only - neither one affects grouping. Recall is keyword-overlap
+  search - no external vector DB or API key needed to get started; swap in
+  embeddings later if recall quality becomes the bottleneck.
 - **Self-improvement loop** - after every `/task` run, the brain asks itself
   "what's the one lesson worth keeping from that?" and stores the answer as a
   `lesson` memory. The next time it works on a similar task, that lesson gets
@@ -49,19 +52,31 @@ graph, at `/graph`.
 
 ## Memory graph (`/graph`)
 
-A 3D view of everything the brain knows, as a small solar system: a glowing
-golden holographic core in the center - a dense wireframe sphere (layered
-latitude/longitude lines, scattered short "circuit trace" arcs, twinkling
-points, a couple of tilted frame rings) rather than a plain ball - orbited
-by one small "topic globe" per branch (the connected component a group of
-memories belongs to, computed from real relationships: a task links to the
-lesson it produced, and memories link when they share the same `topic` -
-an authoritative field, not a guessed-at tag), each tinted in that branch's
-color. That branch's own memories then orbit *their*
-topic globe rather than the main one - a hierarchy, not a flat shell -
-and every level of it drifts continuously on its own, independent of
-camera control. Lessons are green and tasks are blue at every level;
-facts pick up their branch's color.
+A 3D view of everything the brain knows, as a small solar system with three
+nested levels: a glowing golden holographic core in the center - a dense
+wireframe sphere (layered latitude/longitude lines, scattered short "circuit
+trace" arcs, twinkling points, a couple of tilted frame rings) rather than a
+plain ball - orbited by one bigger, neutral-toned **category globe** per
+grand-topic (e.g. "Mechanics", "Coding" - `category`, see above), labeled
+persistently since there are only a handful of these. Inside each category
+globe orbit the smaller **topic globes** for every branch under it (the
+connected component a group of memories belongs to, computed from real
+relationships: a task links to the lesson it produced, and memories link
+when they share the same `topic`), each tinted in that branch's own color.
+A branch with no category at all falls back to orbiting the main globe
+directly, exactly as before this level existed - nothing regresses for old
+or uncategorized data. That branch's own memories then orbit *their* topic
+globe in turn - a hierarchy, not a flat shell - and every level of it drifts
+continuously on its own, independent of camera control. Lessons are green
+and tasks are blue at every level; facts pick up their branch's color.
+
+Old data saved before `category` existed has no category yet, so it stays
+uncategorized (orbiting the main globe directly) until you run
+`python scripts/backfill_categories.py`, which retroactively categorizes
+memories whose `topic` matches a known Wikipedia-scan topic (see
+`TOPIC_TO_CATEGORY` in that script - extend it for topics beyond the ones
+already covered). New scans and manual `remember` calls categorize
+themselves automatically.
 
 Drag to rotate, scroll to zoom, hover a memory for its label, click one for
 the full detail panel. Search highlights matching memories and dims the
@@ -145,7 +160,7 @@ uvicorn app.main:app --reload
 | POST   | `/queue/stop`| -                               | Signals the running queue to halt after its current topic finishes. |
 | DELETE | `/queue/{id}`| -                               | Removes one queue item by id, any status. |
 | GET    | `/memory`    | `?kind=fact\|lesson&limit=100` | Lists stored memories. |
-| POST   | `/memory`    | `{"kind", "content", "topic", "tags"}` | Manually add a memory. `topic` groups it with others on the same subject. |
+| POST   | `/memory`    | `{"kind", "content", "topic", "category", "tags"}` | Manually add a memory. `topic` groups it with others on the same subject; `category` (see `tools.CATEGORIES`) nests that topic under a grand-topic globe. |
 | GET    | `/graph`     | -                               | The memory graph UI (open in a browser). |
 | GET    | `/graph/data`| -                               | `{nodes, edges}` JSON backing the graph UI. |
 | GET    | `/health`    | -                               | Liveness check. |

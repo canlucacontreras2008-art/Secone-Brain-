@@ -98,6 +98,40 @@ def test_memories_without_a_topic_stay_unbranched():
     assert by_content["The sky is blue."]["topic"] == ""
 
 
+def test_branches_get_their_members_category():
+    memory.add_memory("fact", "Gear fact.", topic="Gear", category="Mechanics")
+    memory.add_memory("fact", "Another gear fact.", topic="Gear", category="Mechanics")
+    memory.add_memory("fact", "Algorithm fact.", topic="Algorithm", category="Coding")
+    memory.add_memory("fact", "Another algorithm fact.", topic="Algorithm", category="Coding")
+
+    result = graph.build_graph()
+    by_content = {n["detail"]: n for n in result["nodes"]}
+
+    assert by_content["Gear fact."]["category"] == "Mechanics"
+    assert by_content["Algorithm fact."]["category"] == "Coding"
+
+
+def test_branch_without_any_category_stays_uncategorized():
+    memory.add_memory("fact", "Python is dynamically typed.", topic="Programming languages")
+    memory.add_memory("fact", "Rust has no garbage collector.", topic="Programming languages")
+
+    result = graph.build_graph()
+
+    assert {n["category"] for n in result["nodes"]} == {""}
+
+
+def test_one_stray_category_does_not_split_the_branch():
+    # Majority vote among the branch's own members - a single off-label
+    # remember call shouldn't fork one topic's globe into two categories.
+    memory.add_memory("fact", "Gear fact A.", topic="Gear", category="Mechanics")
+    memory.add_memory("fact", "Gear fact B.", topic="Gear", category="Mechanics")
+    memory.add_memory("fact", "Gear fact C.", topic="Gear", category="Science")
+
+    result = graph.build_graph()
+
+    assert {n["category"] for n in result["nodes"]} == {"Mechanics"}
+
+
 def test_task_links_to_its_lesson():
     task_id = tasks.log_task("Do the thing", "Did the thing")
     memory.add_memory("lesson", "Always check the thing first.", source="task", task_id=task_id)

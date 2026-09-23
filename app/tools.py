@@ -23,6 +23,25 @@ WIKIPEDIA_FETCH_TOOL = {
     "allowed_domains": ["en.wikipedia.org", "wikipedia.org"],
 }
 
+# A fixed, closed vocabulary rather than a freeform string - same fix as the
+# `topic` field, one level up: an open-ended category label would drift
+# ("Coding" vs "Programming" vs "Computer science") and split one real
+# grand-topic into several category globes. Add to this list to support a
+# new grand topic; existing memories keep their category either way.
+CATEGORIES = [
+    "Mechanics",
+    "Coding",
+    "History",
+    "Science",
+    "Mathematics",
+    "Biology",
+    "Geography",
+    "Art & Culture",
+    "Philosophy",
+    "Economics",
+    "General",
+]
+
 REMEMBER_TOOL = {
     "name": "remember",
     "description": (
@@ -47,6 +66,17 @@ REMEMBER_TOOL = {
                     "phrasing each time."
                 ),
             },
+            "category": {
+                "type": "string",
+                "enum": CATEGORIES,
+                "description": (
+                    "The broad grand-topic this memory's `topic` belongs under. Pick "
+                    "the closest match from this fixed list rather than inventing a "
+                    "new label, so e.g. \"Gear\" and \"Newton's laws of motion\" - two "
+                    "different topics - both land under \"Mechanics\" and cluster "
+                    "into the same category globe."
+                ),
+            },
             "tags": {
                 "type": "array",
                 "items": {"type": "string"},
@@ -56,7 +86,7 @@ REMEMBER_TOOL = {
                 ),
             },
         },
-        "required": ["kind", "content", "topic", "tags"],
+        "required": ["kind", "content", "topic", "category", "tags"],
         "additionalProperties": False,
     },
 }
@@ -92,6 +122,7 @@ def execute_tool(name: str, tool_input: dict, default_topic: str = "") -> str:
             content=tool_input["content"],
             tags=tool_input.get("tags", []),
             topic=default_topic or tool_input.get("topic", ""),
+            category=tool_input.get("category", ""),
             source="self",
         )
         return "Saved to memory."

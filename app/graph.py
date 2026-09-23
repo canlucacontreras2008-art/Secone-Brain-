@@ -7,6 +7,7 @@ same `topic` - an explicit, authoritative field the model sets (see
 tools.REMEMBER_TOOL), not a freeform tag guessed to be "the topical one".
 """
 
+from collections import Counter
 from itertools import combinations
 from typing import Dict, List
 
@@ -48,6 +49,7 @@ def build_graph() -> Dict[str, List[dict]]:
             "detail": task["result"],
             "tags": [],
             "topic": "",
+            "category": "",
             "source": "task_log",
             "created_at": task["created_at"],
             "degree": 0,
@@ -59,6 +61,7 @@ def build_graph() -> Dict[str, List[dict]]:
         node_id = f"m{mem['id']}"
         tags = [t for t in mem["tags"].split(",") if t]
         topic = (mem["topic"] or "").strip()
+        category = (mem["category"] or "").strip()
         nodes[node_id] = {
             "id": node_id,
             "kind": mem["kind"],
@@ -66,6 +69,7 @@ def build_graph() -> Dict[str, List[dict]]:
             "detail": mem["content"],
             "tags": tags,
             "topic": topic,
+            "category": category,
             "source": mem["source"],
             "created_at": mem["created_at"],
             "degree": 0,
@@ -111,6 +115,13 @@ def _assign_branches(nodes: Dict[str, dict], edges: List[dict]) -> None:
 
     A node with no edges at all gets branch=None: it isn't part of any
     visible cluster, so it shouldn't claim a branch color.
+
+    Each branch also gets a single `category` - the majority vote among its
+    members' own `category` field (ignoring blanks), so one differently
+    tagged member can't split a topic's own siblings across two category
+    globes. A branch with no categorized members at all keeps category ""
+    and falls back to orbiting the main globe directly, same as before this
+    field existed.
     """
     parent = {node_id: node_id for node_id in nodes}
 
@@ -138,3 +149,15 @@ def _assign_branches(nodes: Dict[str, dict], edges: List[dict]) -> None:
         if root not in branch_index_by_root:
             branch_index_by_root[root] = len(branch_index_by_root)
         nodes[node_id]["branch"] = branch_index_by_root[root]
+
+    branch_categories: Dict[int, Counter] = {}
+    for node in nodes.values():
+        if node["branch"] is not None and node["category"]:
+            branch_categories.setdefault(node["branch"], Counter())[node["category"]] += 1
+
+    branch_category_label = {
+        branch_id: counter.most_common(1)[0][0] for branch_id, counter in branch_categories.items()
+    }
+    for node in nodes.values():
+        if node["branch"] is not None:
+            node["category"] = branch_category_label.get(node["branch"], "")

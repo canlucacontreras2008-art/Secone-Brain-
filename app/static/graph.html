@@ -570,6 +570,15 @@
     { light: "rgba(214, 204, 255, 0.92)", dark: "rgba(50, 45, 90, 0.2)", glow: "rgba(160, 140, 255, 0.5)" },
     { light: "rgba(255, 195, 195, 0.92)", dark: "rgba(90, 30, 30, 0.2)", glow: "rgba(255, 130, 130, 0.5)" },
   ];
+  // A single neutral "container" look for category globes - deliberately
+  // not branch-colored, since one category (e.g. "Mechanics") can hold
+  // several differently colored topic globes inside it.
+  const CATEGORY_GLOBE_STYLE = {
+    light: "rgba(225, 240, 255, 0.92)",
+    dark: "rgba(20, 40, 65, 0.22)",
+    glow: "rgba(140, 200, 255, 0.55)",
+    color: "rgba(170, 210, 240, 0.5)",
+  };
   const hiddenKinds = new Set();
 
   function colorFor(node) {
@@ -584,16 +593,24 @@
   // Loose (unbranched) memories orbit the main globe directly, close in.
   const LOOSE_ORBIT_MIN = 145;
   const LOOSE_ORBIT_JITTER = 25;
-  // Each branch becomes its own small "topic globe" orbiting further out;
-  // its members then orbit *that* mini-globe instead of the main one.
+  // A branch with no category (old data, or a one-off manual memory) still
+  // becomes its own small "topic globe" orbiting the main globe directly -
+  // the fallback for when there's no bigger grand-topic to nest it under.
   const TOPIC_ORBIT_MIN = 230;
   const TOPIC_ORBIT_JITTER = 55;
+  // Grand-topic "category globes" (e.g. "Mechanics", "Coding") orbit the
+  // main globe further out still, each one bigger than the topic globes it
+  // holds; a branch WITH a category orbits its category globe instead of
+  // the main one - one more level in the hierarchy, not a flat shell.
+  const CATEGORY_ORBIT_MIN = 300;
+  const CATEGORY_ORBIT_JITTER = 70;
   const CAMERA_DISTANCE = 1100;
 
   let width = 0, height = 0, dpr = 1;
   let nodes = [];
   let edges = [];
   let topicGlobes = [];
+  let categoryGlobes = [];
   let byId = new Map();
   let selectedId = null;
   let hoveredId = null;
@@ -650,9 +667,11 @@
     return { theta: Math.acos(Math.max(-1, Math.min(1, dir.y))), phi: Math.atan2(dir.z, dir.x) };
   }
 
-  // --- lay the scene out as a small hierarchy: each branch becomes its own
-  // mini "topic globe" orbiting the main one, and that branch's memories
-  // orbit their mini-globe in turn - not all flat around the main globe.
+  // --- lay the scene out as a hierarchy: branches that share a category
+  // (a grand-topic, e.g. "Mechanics") nest inside one bigger category globe
+  // orbiting the main one; a branch with no category falls back to orbiting
+  // the main globe directly, same as before categories existed. Either way,
+  // a branch's own memories then orbit its mini "topic globe" in turn.
   function assignPositions(allNodes) {
     const byBranch = new Map();
     const loose = [];
@@ -666,24 +685,71 @@
     }
 
     const branchIds = Array.from(byBranch.keys()).sort((a, b) => a - b);
-    topicGlobes = branchIds.map((branchId, idx) => {
+    const byCategory = new Map();
+    const uncategorizedBranchIds = [];
+    for (const branchId of branchIds) {
+      const category = byBranch.get(branchId)[0].category || "";
+      if (category) {
+        if (!byCategory.has(category)) byCategory.set(category, []);
+        byCategory.get(category).push(branchId);
+      } else {
+        uncategorizedBranchIds.push(branchId);
+      }
+    }
+
+    const categoryNames = Array.from(byCategory.keys()).sort();
+    categoryGlobes = categoryNames.map((name, idx) => {
+      const branchIdsInCategory = byCategory.get(name);
+      const totalMembers = branchIdsInCategory.reduce((sum, id) => sum + byBranch.get(id).length, 0);
+      const rng = mulberry32(hashStr("category-" + name));
+      const { theta, phi } = directionToThetaPhi(fibonacciDirection(idx, categoryNames.length));
+      return {
+        name,
+        radius: Math.min(65, 30 + Math.sqrt(totalMembers) * 6),
+        orbitTheta: theta,
+        orbitPhi0: phi,
+        orbitRadius: CATEGORY_ORBIT_MIN + rng() * CATEGORY_ORBIT_JITTER,
+        // Slower still than a topic globe's own orbit - the biggest
+        // structures drift the most sedately.
+        orbitSpeed: (rng() - 0.5) * 0.012,
+        branchIds: branchIdsInCategory,
+        cx: 0, cy: 0, cz: 0,
+      };
+    });
+
+    function makeTopicGlobe(branchId, idx, total, parentCategory, orbitMin, orbitJitter, orbitSpeedScale) {
       const members = byBranch.get(branchId);
       const rng = mulberry32(hashStr("topic-" + branchId));
-      const { theta, phi } = directionToThetaPhi(fibonacciDirection(idx, branchIds.length));
+      const { theta, phi } = directionToThetaPhi(fibonacciDirection(idx, total));
       return {
         id: branchId,
         color: BRANCH_COLORS[branchId % BRANCH_COLORS.length],
         style: BRANCH_GLOBE_STYLES[branchId % BRANCH_GLOBE_STYLES.length],
         radius: Math.min(40, 18 + Math.sqrt(members.length) * 5),
+        parentCategory,
         orbitTheta: theta,
         orbitPhi0: phi,
-        orbitRadius: TOPIC_ORBIT_MIN + rng() * TOPIC_ORBIT_JITTER,
-        // Slower than an individual memory's local orbit - the whole
-        // structure drifts around the main globe at a stately pace.
-        orbitSpeed: (rng() - 0.5) * 0.02,
+        orbitRadius: orbitMin + rng() * orbitJitter,
+        orbitSpeed: (rng() - 0.5) * orbitSpeedScale,
         members,
         cx: 0, cy: 0, cz: 0,
       };
+    }
+
+    topicGlobes = [];
+    for (const cat of categoryGlobes) {
+      cat.branchIds.forEach((branchId, i) => {
+        topicGlobes.push(makeTopicGlobe(
+          branchId, i, cat.branchIds.length, cat,
+          cat.radius * 1.3, cat.radius * 0.5, 0.05
+        ));
+      });
+    }
+    uncategorizedBranchIds.forEach((branchId, idx) => {
+      topicGlobes.push(makeTopicGlobe(
+        branchId, idx, uncategorizedBranchIds.length, null,
+        TOPIC_ORBIT_MIN, TOPIC_ORBIT_JITTER, 0.02
+      ));
     });
 
     for (const g of topicGlobes) {
@@ -712,11 +778,18 @@
   }
 
   function updateOrbits(tSeconds) {
+    for (const c of categoryGlobes) {
+      const phi = c.orbitPhi0 + tSeconds * c.orbitSpeed;
+      c.cx = c.orbitRadius * Math.sin(c.orbitTheta) * Math.cos(phi);
+      c.cy = c.orbitRadius * Math.cos(c.orbitTheta);
+      c.cz = c.orbitRadius * Math.sin(c.orbitTheta) * Math.sin(phi);
+    }
     for (const g of topicGlobes) {
+      const base = g.parentCategory || { cx: 0, cy: 0, cz: 0 };
       const phi = g.orbitPhi0 + tSeconds * g.orbitSpeed;
-      g.cx = g.orbitRadius * Math.sin(g.orbitTheta) * Math.cos(phi);
-      g.cy = g.orbitRadius * Math.cos(g.orbitTheta);
-      g.cz = g.orbitRadius * Math.sin(g.orbitTheta) * Math.sin(phi);
+      g.cx = base.cx + g.orbitRadius * Math.sin(g.orbitTheta) * Math.cos(phi);
+      g.cy = base.cy + g.orbitRadius * Math.cos(g.orbitTheta);
+      g.cz = base.cz + g.orbitRadius * Math.sin(g.orbitTheta) * Math.sin(phi);
     }
     for (const n of nodes) {
       if (n.topicGlobe) {
@@ -965,7 +1038,9 @@
 
   // --- node/edge rendering ---
   function haystackOf(n) {
-    return (n.label + " " + n.detail + " " + n.tags.join(" ")).toLowerCase();
+    return (
+      n.label + " " + n.detail + " " + n.tags.join(" ") + " " + (n.topic || "") + " " + (n.category || "")
+    ).toLowerCase();
   }
 
   function drawEdge(a, b, kind) {
@@ -1055,6 +1130,53 @@
     ctx.globalAlpha = 1;
   }
 
+  // A bigger, neutral-toned globe holding several topic globes - the
+  // grand-topic these topics all belong under (e.g. "Mechanics"). Labeled
+  // persistently rather than hover-only: there are only a handful of these,
+  // so naming them up front helps orient the whole scene at a glance.
+  function drawCategoryGlobe(c, rp, pr) {
+    const behind = rp.z > 0 && Math.hypot(rp.x, rp.y) < GLOBE_RADIUS;
+    const r = c.radius * pr.scale;
+    if (r < 0.5) return;
+
+    ctx.globalAlpha = behind ? 0.15 : 1;
+
+    ctx.save();
+    ctx.shadowColor = CATEGORY_GLOBE_STYLE.glow;
+    ctx.shadowBlur = 26;
+    ctx.beginPath();
+    ctx.arc(pr.x, pr.y, r * 0.88, 0, Math.PI * 2);
+    ctx.fillStyle = CATEGORY_GLOBE_STYLE.color;
+    ctx.fill();
+    ctx.restore();
+
+    const grad = ctx.createRadialGradient(
+      pr.x - r * 0.3, pr.y - r * 0.3, r * 0.05,
+      pr.x, pr.y, r
+    );
+    grad.addColorStop(0, CATEGORY_GLOBE_STYLE.light);
+    grad.addColorStop(0.55, CATEGORY_GLOBE_STYLE.color);
+    grad.addColorStop(1, CATEGORY_GLOBE_STYLE.dark);
+    ctx.beginPath();
+    ctx.arc(pr.x, pr.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    if (!behind) {
+      ctx.font = "600 12px system-ui, -apple-system, sans-serif";
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(10, 14, 20, 0.85)";
+      ctx.fillStyle = "#eaf4ff";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.strokeText(c.name, pr.x, pr.y - r - 10);
+      ctx.fillText(c.name, pr.x, pr.y - r - 10);
+      ctx.textAlign = "left"; // other draw calls assume the default alignment
+    }
+
+    ctx.globalAlpha = 1;
+  }
+
   function render() {
     ctx.clearRect(0, 0, width, height);
     drawGlobe();
@@ -1080,12 +1202,18 @@
       const pr = projectRotated(rp);
       drawables.push({ type: "topicGlobe", depth: rp.z, g, rp, pr });
     }
+    for (const c of categoryGlobes) {
+      const rp = rotatePoint({ x: c.cx, y: c.cy, z: c.cz });
+      const pr = projectRotated(rp);
+      drawables.push({ type: "categoryGlobe", depth: rp.z, c, rp, pr });
+    }
     drawables.sort((a, b) => b.depth - a.depth); // far first (painter's algorithm)
 
     for (const d of drawables) {
       if (d.type === "edge") drawEdge(d.e.a, d.e.b, d.e.kind);
       else if (d.type === "node") drawNode(d.pn.n, d.pn.p);
-      else drawTopicGlobe(d.g, d.rp, d.pr);
+      else if (d.type === "topicGlobe") drawTopicGlobe(d.g, d.rp, d.pr);
+      else drawCategoryGlobe(d.c, d.rp, d.pr);
     }
 
     lastProjected = projectedNodes;
@@ -1216,6 +1344,10 @@
       <div class="field">
         <div class="field-label">Topic</div>
         <div class="field-value">${node.topic ? escapeHtml(node.topic) : "&mdash;"}</div>
+      </div>
+      <div class="field">
+        <div class="field-label">Category</div>
+        <div class="field-value">${node.category ? escapeHtml(node.category) : "&mdash;"}</div>
       </div>
       <div class="field">
         <div class="field-label">Tags</div>

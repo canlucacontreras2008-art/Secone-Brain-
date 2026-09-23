@@ -55,6 +55,7 @@ class MemoryIn(BaseModel):
     kind: str
     content: str
     topic: str = ""
+    category: str = ""
     tags: List[str] = []
 
 
@@ -118,7 +119,7 @@ def get_memory(kind: Optional[str] = None, limit: int = 100):
 @app.post("/memory")
 def add_memory(item: MemoryIn):
     memory_id = memory_store.add_memory(
-        item.kind, item.content, item.tags, source="manual", topic=item.topic
+        item.kind, item.content, item.tags, source="manual", topic=item.topic, category=item.category
     )
     return {"id": memory_id}
 

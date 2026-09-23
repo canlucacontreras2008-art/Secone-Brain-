@@ -21,6 +21,10 @@ needs a `topic` - the general subject it's about. Reuse the exact same topic
 string across multiple memories about the same subject (don't paraphrase it
 differently each time); topic is what groups related memories together, so
 inconsistent phrasing splits one real subject into several unrelated ones.
+Every memory also needs a `category` - the broad grand-topic its topic
+belongs under (e.g. "Mechanics", "Coding", "History"), picked from a fixed
+list so several related topics cluster under one bigger category, one level
+above individual topics.
 """
 
 
@@ -141,13 +145,18 @@ class Brain:
                                 "type": "string",
                                 "description": "The general subject this lesson is about.",
                             },
+                            "category": {
+                                "type": "string",
+                                "enum": tools.CATEGORIES,
+                                "description": "The broad grand-topic this lesson's topic belongs under.",
+                            },
                             "tags": {
                                 "type": "array",
                                 "items": {"type": "string"},
                                 "description": "2-4 short extra keywords for search.",
                             },
                         },
-                        "required": ["lesson", "topic", "tags"],
+                        "required": ["lesson", "topic", "category", "tags"],
                         "additionalProperties": False,
                     },
                 },
@@ -163,6 +172,7 @@ class Brain:
                 content=lesson,
                 tags=data.get("tags") or [],
                 topic=data.get("topic") or "",
+                category=data.get("category") or "",
                 source="task",
                 task_id=task_id,
             )
