@@ -729,19 +729,20 @@
       };
     });
 
-    function makeTopicGlobe(branchId, idx, total, parentCategory, orbitMin, orbitJitter, orbitSpeedScale) {
+    function makeTopicGlobe(branchId, idx, total, parentCategory, computeOrbitRadius, orbitSpeedScale) {
       const members = byBranch.get(branchId);
       const rng = mulberry32(hashStr("topic-" + branchId));
       const { theta, phi } = directionToThetaPhi(fibonacciDirection(idx, total));
+      const radius = Math.min(40, 18 + Math.sqrt(members.length) * 5);
       return {
         id: branchId,
         color: BRANCH_COLORS[branchId % BRANCH_COLORS.length],
         style: BRANCH_GLOBE_STYLES[branchId % BRANCH_GLOBE_STYLES.length],
-        radius: Math.min(40, 18 + Math.sqrt(members.length) * 5),
+        radius,
         parentCategory,
         orbitTheta: theta,
         orbitPhi0: phi,
-        orbitRadius: orbitMin + rng() * orbitJitter,
+        orbitRadius: computeOrbitRadius(radius, rng),
         orbitSpeed: (rng() - 0.5) * orbitSpeedScale,
         members,
         cx: 0, cy: 0, cz: 0,
@@ -753,14 +754,22 @@
       cat.branchIds.forEach((branchId, i) => {
         topicGlobes.push(makeTopicGlobe(
           branchId, i, cat.branchIds.length, cat,
-          cat.radius * 1.3, cat.radius * 0.5, 0.05
+          // A fixed multiplier of the category's own radius (the previous
+          // approach) can put a topic globe's orbit closer to the category
+          // center than the sum of the two spheres' radii, once the topic
+          // globe itself is more than ~30% of its category's size - which
+          // is the common case for a small category. Add this topic's own
+          // radius directly so the two surfaces can never intersect.
+          (radius, rng) => cat.radius + radius + 15 + rng() * cat.radius * 0.5,
+          0.05
         ));
       });
     }
     uncategorizedBranchIds.forEach((branchId, idx) => {
       topicGlobes.push(makeTopicGlobe(
         branchId, idx, uncategorizedBranchIds.length, null,
-        TOPIC_ORBIT_MIN, TOPIC_ORBIT_JITTER, 0.02
+        (radius, rng) => TOPIC_ORBIT_MIN + rng() * TOPIC_ORBIT_JITTER,
+        0.02
       ));
     });
 
