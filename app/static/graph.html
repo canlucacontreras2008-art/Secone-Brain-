@@ -658,7 +658,13 @@
 
   // Evenly spaced direction on the unit sphere (golden-angle spiral).
   function fibonacciDirection(i, total) {
-    const y = total > 1 ? 1 - (i / (total - 1)) * 2 : 0;
+    // The "offset" variant (i + 0.5, not i) - the plain version places the
+    // very first and last point of any group exactly at the poles (y = ±1),
+    // which is harmless for static layout but means an orbit through that
+    // point is forced through a meridian (pole to pole) - visibly "stuck"
+    // swinging past the top and bottom instead of sweeping the whole sphere.
+    // This spacing never lands exactly on a pole, for any total.
+    const y = 1 - (2 * i + 1) / total;
     const r = Math.sqrt(Math.max(0, 1 - y * y));
     const theta = Math.PI * (3 - Math.sqrt(5)) * i;
     return { x: Math.cos(theta) * r, y, z: Math.sin(theta) * r };
