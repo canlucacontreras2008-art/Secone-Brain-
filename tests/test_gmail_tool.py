@@ -147,3 +147,70 @@ def test_create_draft_does_not_send_anything():
     assert result == {"id": "draft1", "to": "a@b.com", "subject": "Hi"}
     assert drafts_api.calls[0][0] == "create"
     assert "message" in drafts_api.calls[0][1]["body"]
+
+
+ORIGINAL_MESSAGE = {
+    "id": "m1",
+    "threadId": "t1",
+    "payload": {
+        "headers": [
+            {"name": "Subject", "value": "Hi"},
+            {"name": "From", "value": "a@b.com"},
+            {"name": "Message-ID", "value": "<abc@mail.gmail.com>"},
+        ]
+    },
+}
+
+
+def test_reply_message_threads_and_addresses_the_original_sender():
+    messages_api = FakeMessagesAPI(get_results={"m1": ORIGINAL_MESSAGE}, send_result={"id": "sent1"})
+    service = FakeService(messages_api=messages_api)
+
+    result = gmail_tool.reply_message(message_id="m1", body="Sounds good", service=service)
+
+    assert result == {"id": "sent1", "to": "a@b.com", "subject": "Re: Hi"}
+    send_kwargs = messages_api.calls[-1][1]
+    assert send_kwargs["body"]["threadId"] == "t1"
+    raw = base64.urlsafe_b64decode(send_kwargs["body"]["raw"].encode("ascii")).decode()
+    assert "To: a@b.com" in raw
+    assert "Subject: Re: Hi" in raw
+    assert "In-Reply-To: <abc@mail.gmail.com>" in raw
+    assert "Sounds good" in raw
+
+
+def test_reply_message_does_not_double_prefix_an_existing_re_subject():
+    original = {**ORIGINAL_MESSAGE, "payload": {"headers": [
+        {"name": "Subject", "value": "Re: Hi"}, {"name": "From", "value": "a@b.com"},
+    ]}}
+    messages_api = FakeMessagesAPI(get_results={"m1": original}, send_result={"id": "sent1"})
+    service = FakeService(messages_api=messages_api)
+
+    result = gmail_tool.reply_message(message_id="m1", body="Sounds good", service=service)
+
+    assert result["subject"] == "Re: Hi"
+
+
+def test_reply_message_prefers_reply_to_over_from():
+    original = {**ORIGINAL_MESSAGE, "payload": {"headers": [
+        {"name": "Subject", "value": "Hi"},
+        {"name": "From", "value": "a@b.com"},
+        {"name": "Reply-To", "value": "team@b.com"},
+    ]}}
+    messages_api = FakeMessagesAPI(get_results={"m1": original}, send_result={"id": "sent1"})
+    service = FakeService(messages_api=messages_api)
+
+    result = gmail_tool.reply_message(message_id="m1", body="Sounds good", service=service)
+
+    assert result["to"] == "team@b.com"
+
+
+def test_create_reply_draft_does_not_send_anything():
+    messages_api = FakeMessagesAPI(get_results={"m1": ORIGINAL_MESSAGE})
+    drafts_api = FakeDraftsAPI(create_result={"id": "draft1"})
+    service = FakeService(messages_api=messages_api, drafts_api=drafts_api)
+
+    result = gmail_tool.create_reply_draft(message_id="m1", body="Sounds good", service=service)
+
+    assert result == {"id": "draft1", "to": "a@b.com", "subject": "Re: Hi"}
+    assert drafts_api.calls[0][0] == "create"
+    assert drafts_api.calls[0][1]["body"]["message"]["threadId"] == "t1"

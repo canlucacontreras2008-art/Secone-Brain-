@@ -76,6 +76,7 @@ class CalendarEventIn(BaseModel):
     end: str
     description: str = ""
     location: str = ""
+    recurrence: Optional[List[str]] = None
 
 
 class CalendarEventUpdate(BaseModel):
@@ -84,11 +85,18 @@ class CalendarEventUpdate(BaseModel):
     end: Optional[str] = None
     description: Optional[str] = None
     location: Optional[str] = None
+    recurrence: Optional[List[str]] = None
 
 
 class EmailIn(BaseModel):
     to: str
     subject: str
+    body: str
+    cc: str = ""
+
+
+class EmailReplyIn(BaseModel):
+    message_id: str
     body: str
     cc: str = ""
 
@@ -268,6 +276,22 @@ def create_gmail_draft(email: EmailIn):
 def send_gmail_message(email: EmailIn):
     try:
         return gmail_tool.send_message(**email.model_dump())
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/gmail/reply-drafts")
+def create_gmail_reply_draft(reply: EmailReplyIn):
+    try:
+        return gmail_tool.create_reply_draft(**reply.model_dump())
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/gmail/reply")
+def reply_gmail_message(reply: EmailReplyIn):
+    try:
+        return gmail_tool.reply_message(**reply.model_dump())
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

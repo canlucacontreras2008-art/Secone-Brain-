@@ -183,6 +183,17 @@ CALENDAR_CREATE_EVENT_TOOL = {
             "end": {"type": "string", "description": "Same format as start."},
             "description": {"type": "string", "description": "Optional longer notes."},
             "location": {"type": "string", "description": "Optional location."},
+            "recurrence": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Optional RFC5545 recurrence rules to make this a repeating "
+                    "event, e.g. [\"RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=10\"] for "
+                    "every Monday, 10 times, or "
+                    "[\"RRULE:FREQ=DAILY;UNTIL=20261231T000000Z\"] for daily "
+                    "until a date. Omit for a one-time event."
+                ),
+            },
         },
         "required": ["summary", "start", "end"],
         "additionalProperties": False,
@@ -206,6 +217,11 @@ CALENDAR_UPDATE_EVENT_TOOL = {
             "end": {"type": "string", "description": "Same format as start."},
             "description": {"type": "string"},
             "location": {"type": "string"},
+            "recurrence": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Replace the event's RFC5545 recurrence rules. Same format as calendar_create_event.",
+            },
         },
         "required": ["event_id"],
         "additionalProperties": False,
@@ -300,6 +316,48 @@ GMAIL_SEND_MESSAGE_TOOL = {
     },
 }
 
+GMAIL_REPLY_MESSAGE_TOOL = {
+    "name": "gmail_reply_message",
+    "description": (
+        "Immediately send a reply within the same Gmail thread as an "
+        "existing message (found via gmail_list_messages/gmail_read_message) "
+        "- this cannot be undone once sent. Prefer this over "
+        "gmail_send_message when replying to something specific, since it "
+        "threads correctly instead of showing up as an unrelated new email. "
+        "Only call this when the user has explicitly said to send the "
+        "reply - if there's any doubt, use gmail_create_reply_draft instead."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "message_id": {"type": "string", "description": "The message being replied to."},
+            "body": {"type": "string"},
+            "cc": {"type": "string", "description": "Optional CC address(es), comma-separated."},
+        },
+        "required": ["message_id", "body"],
+        "additionalProperties": False,
+    },
+}
+
+GMAIL_CREATE_REPLY_DRAFT_TOOL = {
+    "name": "gmail_create_reply_draft",
+    "description": (
+        "Create a reply draft within the same Gmail thread as an existing "
+        "message - saved for the user to review and send themselves, "
+        "nothing is sent yet."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "message_id": {"type": "string", "description": "The message being replied to."},
+            "body": {"type": "string"},
+            "cc": {"type": "string", "description": "Optional CC address(es), comma-separated."},
+        },
+        "required": ["message_id", "body"],
+        "additionalProperties": False,
+    },
+}
+
 # Not included in WIKIPEDIA_TOOLS - a scan already IS the research, so letting
 # it queue more research on itself risks a self-referential spiral. Calendar
 # and Gmail tools aren't relevant to a Wikipedia scan either.
@@ -316,6 +374,8 @@ ALL_TOOLS = [
     GMAIL_READ_MESSAGE_TOOL,
     GMAIL_CREATE_DRAFT_TOOL,
     GMAIL_SEND_MESSAGE_TOOL,
+    GMAIL_REPLY_MESSAGE_TOOL,
+    GMAIL_CREATE_REPLY_DRAFT_TOOL,
 ]
 WIKIPEDIA_TOOLS = [WIKIPEDIA_SEARCH_TOOL, WIKIPEDIA_FETCH_TOOL, REMEMBER_TOOL]
 
@@ -373,6 +433,7 @@ def execute_tool(name: str, tool_input: dict, default_topic: str = "") -> str:
             end=tool_input["end"],
             description=tool_input.get("description", ""),
             location=tool_input.get("location", ""),
+            recurrence=tool_input.get("recurrence"),
         )
         return f"Created event [{event['id']}] \"{event['summary']}\" from {event['start']} to {event['end']}."
 
@@ -421,5 +482,21 @@ def execute_tool(name: str, tool_input: dict, default_topic: str = "") -> str:
             cc=tool_input.get("cc", ""),
         )
         return f"Sent message [{sent['id']}] to {sent['to']}: \"{sent['subject']}\"."
+
+    if name == "gmail_reply_message":
+        sent = gmail_tool.reply_message(
+            message_id=tool_input["message_id"],
+            body=tool_input["body"],
+            cc=tool_input.get("cc", ""),
+        )
+        return f"Sent reply [{sent['id']}] to {sent['to']}: \"{sent['subject']}\"."
+
+    if name == "gmail_create_reply_draft":
+        draft = gmail_tool.create_reply_draft(
+            message_id=tool_input["message_id"],
+            body=tool_input["body"],
+            cc=tool_input.get("cc", ""),
+        )
+        return f"Created reply draft [{draft['id']}] to {draft['to']}: \"{draft['subject']}\"."
 
     raise ValueError(f"Unknown client tool: {name}")

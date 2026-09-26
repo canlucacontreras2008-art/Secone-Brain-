@@ -95,6 +95,28 @@ def test_calendar_create_event_dispatch_calls_through(monkeypatch):
     assert "Created event [new1]" in result
 
 
+def test_calendar_create_event_dispatch_passes_recurrence_through(monkeypatch):
+    captured = {}
+
+    def fake_create_event(**kwargs):
+        captured.update(kwargs)
+        return {"id": "new1", "summary": kwargs["summary"], "start": kwargs["start"], "end": kwargs["end"]}
+
+    monkeypatch.setattr(calendar_tool, "create_event", fake_create_event)
+
+    tools.execute_tool(
+        "calendar_create_event",
+        {
+            "summary": "Standup",
+            "start": "2026-09-24T09:00:00-07:00",
+            "end": "2026-09-24T09:15:00-07:00",
+            "recurrence": ["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=10"],
+        },
+    )
+
+    assert captured["recurrence"] == ["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=10"]
+
+
 def test_calendar_update_event_dispatch_excludes_event_id_from_fields(monkeypatch):
     captured = {}
 
@@ -211,3 +233,40 @@ def test_gmail_send_message_dispatch_calls_through(monkeypatch):
 
     assert captured["to"] == "a@b.com"
     assert "Sent message [s1]" in result
+
+
+def test_gmail_reply_message_dispatch_calls_through(monkeypatch):
+    captured = {}
+
+    def fake_reply_message(**kwargs):
+        captured.update(kwargs)
+        return {"id": "r1", "to": "a@b.com", "subject": "Re: Hi"}
+
+    monkeypatch.setattr(gmail_tool, "reply_message", fake_reply_message)
+
+    result = tools.execute_tool(
+        "gmail_reply_message", {"message_id": "m1", "body": "Sounds good"}
+    )
+
+    assert captured["message_id"] == "m1"
+    assert "Sent reply [r1]" in result
+
+
+def test_gmail_create_reply_draft_dispatch_never_sends(monkeypatch):
+    captured = {}
+
+    def fake_create_reply_draft(**kwargs):
+        captured.update(kwargs)
+        return {"id": "rd1", "to": "a@b.com", "subject": "Re: Hi"}
+
+    monkeypatch.setattr(gmail_tool, "create_reply_draft", fake_create_reply_draft)
+    monkeypatch.setattr(
+        gmail_tool, "reply_message", lambda **kwargs: pytest.fail("create_reply_draft must not send")
+    )
+
+    result = tools.execute_tool(
+        "gmail_create_reply_draft", {"message_id": "m1", "body": "Sounds good"}
+    )
+
+    assert captured["message_id"] == "m1"
+    assert "Created reply draft [rd1]" in result

@@ -176,21 +176,29 @@ Graph page to see it show up and run it.
 ## Google integrations (Calendar + Gmail)
 
 The brain can read, create, update, and delete events on your real Google
-Calendar, and search, read, draft, and send email from your real Gmail -
-through chat, a task, or Voice Chat ("what's on my schedule tomorrow?",
-"schedule a dentist appointment Friday at 2pm", "any unread email from
-Sam?", "draft a reply to that"), or directly via the REST endpoints below.
-Both share one OAuth app and one granted token (`app/google_auth.py`) -
-you only go through Google's consent screen once for both.
+Calendar (including recurring events), and search, read, draft, send, and
+reply to email from your real Gmail - through chat, a task, or Voice Chat
+("what's on my schedule tomorrow?", "schedule a weekly standup Mondays at
+9am", "any unread email from Sam?", "reply to that saying I'm in"), or
+directly via the REST endpoints below. Both share one OAuth app and one
+granted token (`app/google_auth.py`) - you only go through Google's consent
+screen once for both.
 
 It only ever acts because you asked in the moment - never proactively -
 and it's given the current date and time in every chat/task so it can
 resolve "tomorrow" or "next Tuesday" correctly. Before changing or deleting
 a calendar event, it looks it up first via `calendar_list_events` rather
-than guessing an id. **Sending** an email can't be undone once sent, so the
-model is instructed to use `gmail_create_draft` instead whenever it's at
-all ambiguous whether you want it sent immediately - `gmail_send_message`
-is reserved for when you've clearly said "send it."
+than guessing an id. Recurring events use a standard
+[RFC5545](https://icalendar.org/iCalendar-RFC-5545/3-8-5-3-recurrence-rule.html)
+recurrence rule, e.g. `RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=10`.
+
+**Sending** an email can't be undone once sent, so the model is instructed
+to use `gmail_create_draft`/`gmail_create_reply_draft` instead whenever it's
+at all ambiguous whether you want it sent immediately -
+`gmail_send_message`/`gmail_reply_message` are reserved for when you've
+clearly said "send it." Replying (rather than sending a fresh message) sets
+Gmail's threading headers so it shows up in the original conversation
+instead of as an unrelated new email.
 
 ### One-time setup
 
@@ -348,13 +356,15 @@ uvicorn app.main:app --reload
 | GET    | `/memory`    | `?kind=fact\|lesson&limit=100` | Lists stored memories. |
 | POST   | `/memory`    | `{"kind", "content", "topic", "category", "tags"}` | Manually add a memory. `topic` groups it with others on the same subject; `category` (see `tools.CATEGORIES`) nests that topic under a grand-topic globe. |
 | GET    | `/calendar/events` | `?time_min=&time_max=&query=&max_results=20` | Lists calendar events in a range (defaults to now through 7 days out). |
-| POST   | `/calendar/events` | `{"summary", "start", "end", "description", "location"}` | Creates an event. `start`/`end` are RFC3339 datetimes, or plain `"YYYY-MM-DD"` for an all-day event. |
+| POST   | `/calendar/events` | `{"summary", "start", "end", "description", "location", "recurrence"}` | Creates an event. `start`/`end` are RFC3339 datetimes, or plain `"YYYY-MM-DD"` for an all-day event. `recurrence` is an optional list of RFC5545 rules for a repeating event. |
 | PATCH  | `/calendar/events/{id}` | any subset of the fields above | Updates only the fields provided. |
 | DELETE | `/calendar/events/{id}` | -                         | Deletes an event. |
 | GET    | `/gmail/messages` | `?query=&max_results=10`  | Lists/searches messages. `query` uses Gmail's own search syntax. |
 | GET    | `/gmail/messages/{id}` | -                    | Reads one message's full content. |
 | POST   | `/gmail/drafts` | `{"to", "subject", "body", "cc"}` | Creates a draft - nothing is sent. |
 | POST   | `/gmail/send` | `{"to", "subject", "body", "cc"}`   | Sends an email immediately. |
+| POST   | `/gmail/reply-drafts` | `{"message_id", "body", "cc"}` | Creates a threaded reply draft to an existing message - nothing is sent. |
+| POST   | `/gmail/reply` | `{"message_id", "body", "cc"}`  | Sends a threaded reply to an existing message immediately. |
 | GET    | `/graph`     | -                               | The memory graph UI (open in a browser). |
 | GET    | `/graph/data`| -                               | `{nodes, edges}` JSON backing the graph UI. |
 | GET    | `/voice`     | -                               | The voice chat UI (open in a browser). |

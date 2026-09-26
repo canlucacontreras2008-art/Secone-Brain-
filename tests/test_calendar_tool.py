@@ -119,12 +119,43 @@ def test_create_event_attaches_configured_timezone_to_naive_datetimes(monkeypatc
     assert body["start"] == {"dateTime": "2026-09-24T15:00:00", "timeZone": "America/New_York"}
 
 
+def test_create_event_includes_recurrence_when_given():
+    api = FakeEventsAPI(insert_result=RAW_EVENT)
+    calendar_tool.create_event(
+        summary="Standup",
+        start="2026-09-24T09:00:00-07:00",
+        end="2026-09-24T09:15:00-07:00",
+        recurrence=["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=10"],
+        service=FakeService(api),
+    )
+
+    body = api.calls[0][1]["body"]
+    assert body["recurrence"] == ["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=10"]
+
+
+def test_create_event_omits_recurrence_when_not_given():
+    api = FakeEventsAPI(insert_result=RAW_EVENT)
+    calendar_tool.create_event(
+        summary="Dentist", start="2026-09-24T15:00:00-07:00", end="2026-09-24T16:00:00-07:00", service=FakeService(api)
+    )
+
+    assert "recurrence" not in api.calls[0][1]["body"]
+
+
 def test_update_event_only_includes_provided_fields():
     api = FakeEventsAPI(patch_result=RAW_EVENT)
     calendar_tool.update_event("abc123", summary="Dentist (rescheduled)", service=FakeService(api))
 
     body = api.calls[0][1]["body"]
     assert body == {"summary": "Dentist (rescheduled)"}
+
+
+def test_update_event_can_set_recurrence():
+    api = FakeEventsAPI(patch_result=RAW_EVENT)
+    calendar_tool.update_event("abc123", recurrence=["RRULE:FREQ=DAILY;COUNT=3"], service=FakeService(api))
+
+    body = api.calls[0][1]["body"]
+    assert body == {"recurrence": ["RRULE:FREQ=DAILY;COUNT=3"]}
 
 
 def test_delete_event_calls_delete_with_the_event_id():

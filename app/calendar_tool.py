@@ -84,6 +84,7 @@ def create_event(
     end: str,
     description: str = "",
     location: str = "",
+    recurrence: Optional[List[str]] = None,
     service=None,
 ) -> dict:
     service = service or get_service()
@@ -92,6 +93,8 @@ def create_event(
         body["description"] = description
     if location:
         body["location"] = location
+    if recurrence:
+        body["recurrence"] = recurrence
     created = service.events().insert(calendarId=config.GOOGLE_CALENDAR_ID, body=body).execute()
     return _simplify(created)
 
@@ -103,6 +106,7 @@ def update_event(
     end: Optional[str] = None,
     description: Optional[str] = None,
     location: Optional[str] = None,
+    recurrence: Optional[List[str]] = None,
     service=None,
 ) -> dict:
     service = service or get_service()
@@ -117,6 +121,8 @@ def update_event(
         body["description"] = description
     if location is not None:
         body["location"] = location
+    if recurrence is not None:
+        body["recurrence"] = recurrence
     updated = (
         service.events()
         .patch(calendarId=config.GOOGLE_CALENDAR_ID, eventId=event_id, body=body)
