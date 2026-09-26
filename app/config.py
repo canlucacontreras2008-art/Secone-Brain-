@@ -40,3 +40,7 @@ GOOGLE_CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID", "primary")
 # relative dates ("tomorrow", "next Tuesday") resolve against your timezone
 # instead of the server's.
 BRAIN_TIMEZONE = os.getenv("BRAIN_TIMEZONE", "")
+
+# The per-macro URL MacroDroid gives you for its Webhook (URL) trigger - see
+# README "Phone timer" for the one-time macro setup this depends on.
+MACRODROID_WEBHOOK_URL = os.getenv("MACRODROID_WEBHOOK_URL", "")

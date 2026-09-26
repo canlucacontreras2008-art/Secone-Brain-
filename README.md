@@ -250,6 +250,49 @@ Gmail search (`gmail_list_messages` / `GET /gmail/messages`) uses
 [Gmail's own search syntax](https://support.google.com/mail/answer/7190) -
 `is:unread`, `from:someone@example.com`, `subject:invoice`, and so on.
 
+## Phone timer
+
+The brain can set a real timer on your Android phone's Clock app ("set a
+10 minute timer for the pasta") - through chat, a task, Voice Chat, or
+`POST /phone/timer`. There's no cloud API for the stock Clock app, so this
+works by bridging through [MacroDroid](https://play.google.com/store/apps/details?id=com.arlosoft.macrodroid)
+(free) on your phone: the brain calls a webhook URL, which fires Android's
+own `ACTION_SET_TIMER` intent locally - the same thing the Clock app itself
+uses.
+
+### One-time MacroDroid setup
+
+1. Install MacroDroid from the Play Store and create a new macro.
+2. Before adding the trigger, define two **Local Variables** on the macro
+   (MacroDroid only fills in variables that already exist and match by
+   name): an **Integer** named `timer_seconds`, and a **String** named
+   `timer_label`.
+3. Add Trigger -> search for **Webhook (URL)**. Save it, then open it again
+   to copy the generated URL (looks like
+   `https://trigger.macrodroid.com/<id>/<name>`) - MacroDroid maps matching
+   query parameter names onto the variables you just made.
+4. Add Action -> search for **Send Intent**, and configure:
+   - **Action**: `android.intent.action.SET_TIMER`
+   - Leave Package/Class/Data/MIME type blank (this is a generic intent, not
+     aimed at one specific app).
+   - Add three **Extras**:
+     | Name | Type | Value |
+     |---|---|---|
+     | `android.intent.extra.alarm.LENGTH` | Integer | `[timer_seconds]` |
+     | `android.intent.extra.alarm.MESSAGE` | String | `[timer_label]` |
+     | `android.intent.extra.alarm.SKIP_UI` | Boolean | `true` |
+5. Save the macro, then in Android's battery settings exclude MacroDroid
+   from battery optimization ("don't optimize" / "unrestricted") - otherwise
+   Android can delay or drop the webhook while the phone is idle.
+6. Put the webhook URL from step 3 in `.env`:
+   ```
+   MACRODROID_WEBHOOK_URL=https://trigger.macrodroid.com/<id>/<name>
+   ```
+
+Exact menu wording can drift a little between MacroDroid versions - search
+for the trigger/action names above if a screen looks different from this.
+Leave `MACRODROID_WEBHOOK_URL` blank to leave the tool disabled entirely.
+
 ## Auto-start on boot (Windows)
 
 `scripts/start_secone_brain.bat` starts the server for you, running the
@@ -365,6 +408,7 @@ uvicorn app.main:app --reload
 | POST   | `/gmail/send` | `{"to", "subject", "body", "cc"}`   | Sends an email immediately. |
 | POST   | `/gmail/reply-drafts` | `{"message_id", "body", "cc"}` | Creates a threaded reply draft to an existing message - nothing is sent. |
 | POST   | `/gmail/reply` | `{"message_id", "body", "cc"}`  | Sends a threaded reply to an existing message immediately. |
+| POST   | `/phone/timer` | `{"minutes", "label"}`     | Sets a real timer on the phone via the MacroDroid webhook. |
 | GET    | `/graph`     | -                               | The memory graph UI (open in a browser). |
 | GET    | `/graph/data`| -                               | `{nodes, edges}` JSON backing the graph UI. |
 | GET    | `/voice`     | -                               | The voice chat UI (open in a browser). |

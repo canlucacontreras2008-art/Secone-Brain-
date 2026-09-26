@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from . import calendar_tool, db, gmail_tool, graph
+from . import calendar_tool, db, gmail_tool, graph, phone_timer
 from . import memory as memory_store
 from . import research_queue, task_queue
 from .brain import Brain
@@ -99,6 +99,11 @@ class EmailReplyIn(BaseModel):
     message_id: str
     body: str
     cc: str = ""
+
+
+class TimerIn(BaseModel):
+    minutes: float
+    label: str = ""
 
 
 @app.get("/health")
@@ -292,6 +297,14 @@ def create_gmail_reply_draft(reply: EmailReplyIn):
 def reply_gmail_message(reply: EmailReplyIn):
     try:
         return gmail_tool.reply_message(**reply.model_dump())
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/phone/timer")
+def set_phone_timer(timer: TimerIn):
+    try:
+        return phone_timer.set_timer(**timer.model_dump())
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

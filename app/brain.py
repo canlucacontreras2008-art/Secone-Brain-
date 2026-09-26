@@ -22,6 +22,7 @@ You have six abilities beyond a normal chat model:
    `gmail_create_draft`, `gmail_send_message`, `gmail_reply_message`,
    `gmail_create_reply_draft`) - search, read, draft, send, and reply to
    the user's real email.
+7. `phone_set_timer` - set a real timer on the user's Android phone.
 
 Use `remember` proactively: when you learn something true about the world via
 web_search, when the user tells you something about themselves or their
@@ -56,6 +57,10 @@ they want it sent immediately, use `gmail_create_draft` or
 themselves. Prefer the reply tools over the plain send/draft tools whenever
 you're responding to a specific existing message, so it threads correctly
 instead of showing up as an unrelated new email.
+
+Only call `phone_set_timer` when the user has clearly asked for a timer or
+reminder of a specific duration - never proactively, and never guess a
+duration they didn't give you.
 """
 
 

@@ -1,4 +1,4 @@
-from . import calendar_tool, gmail_tool, memory, research_queue
+from . import calendar_tool, gmail_tool, memory, phone_timer, research_queue
 
 # Server tools - run on Anthropic's infrastructure, no local execution needed.
 WEB_SEARCH_TOOL = {
@@ -339,6 +339,25 @@ GMAIL_REPLY_MESSAGE_TOOL = {
     },
 }
 
+PHONE_SET_TIMER_TOOL = {
+    "name": "phone_set_timer",
+    "description": (
+        "Set a real timer on the user's Android phone (via a MacroDroid "
+        "webhook, see README 'Phone timer'). Only do this when the user has "
+        "clearly asked for a timer/reminder of a specific duration - never "
+        "proactively."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "minutes": {"type": "number", "description": "How long the timer should run, in minutes."},
+            "label": {"type": "string", "description": "Optional label shown on the timer, e.g. \"Pasta\"."},
+        },
+        "required": ["minutes"],
+        "additionalProperties": False,
+    },
+}
+
 GMAIL_CREATE_REPLY_DRAFT_TOOL = {
     "name": "gmail_create_reply_draft",
     "description": (
@@ -376,6 +395,7 @@ ALL_TOOLS = [
     GMAIL_SEND_MESSAGE_TOOL,
     GMAIL_REPLY_MESSAGE_TOOL,
     GMAIL_CREATE_REPLY_DRAFT_TOOL,
+    PHONE_SET_TIMER_TOOL,
 ]
 WIKIPEDIA_TOOLS = [WIKIPEDIA_SEARCH_TOOL, WIKIPEDIA_FETCH_TOOL, REMEMBER_TOOL]
 
@@ -498,5 +518,10 @@ def execute_tool(name: str, tool_input: dict, default_topic: str = "") -> str:
             cc=tool_input.get("cc", ""),
         )
         return f"Created reply draft [{draft['id']}] to {draft['to']}: \"{draft['subject']}\"."
+
+    if name == "phone_set_timer":
+        result = phone_timer.set_timer(minutes=tool_input["minutes"], label=tool_input.get("label", ""))
+        label_part = f' "{result["label"]}"' if result["label"] else ""
+        return f"Set a {result['minutes']}-minute timer{label_part} on your phone."
 
     raise ValueError(f"Unknown client tool: {name}")

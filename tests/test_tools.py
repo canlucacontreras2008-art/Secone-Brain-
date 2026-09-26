@@ -3,7 +3,7 @@ import tempfile
 
 import pytest
 
-from app import calendar_tool, config, db, gmail_tool, research_queue, tools
+from app import calendar_tool, config, db, gmail_tool, phone_timer, research_queue, tools
 
 
 @pytest.fixture(autouse=True)
@@ -270,3 +270,26 @@ def test_gmail_create_reply_draft_dispatch_never_sends(monkeypatch):
 
     assert captured["message_id"] == "m1"
     assert "Created reply draft [rd1]" in result
+
+
+def test_phone_set_timer_dispatch_calls_through(monkeypatch):
+    captured = {}
+
+    def fake_set_timer(**kwargs):
+        captured.update(kwargs)
+        return {"minutes": kwargs["minutes"], "label": kwargs.get("label", "")}
+
+    monkeypatch.setattr(phone_timer, "set_timer", fake_set_timer)
+
+    result = tools.execute_tool("phone_set_timer", {"minutes": 10, "label": "Pasta"})
+
+    assert captured == {"minutes": 10, "label": "Pasta"}
+    assert "Set a 10-minute timer \"Pasta\"" in result
+
+
+def test_phone_set_timer_dispatch_without_label(monkeypatch):
+    monkeypatch.setattr(phone_timer, "set_timer", lambda **kwargs: {"minutes": kwargs["minutes"], "label": ""})
+
+    result = tools.execute_tool("phone_set_timer", {"minutes": 5})
+
+    assert result == "Set a 5-minute timer on your phone."
